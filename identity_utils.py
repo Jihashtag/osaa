@@ -1,3 +1,5 @@
+import binascii
+
 from random import randbytes
 from typing import List, Any
 

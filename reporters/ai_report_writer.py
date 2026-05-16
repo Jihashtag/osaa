@@ -118,6 +118,6 @@ Source:
             "Profiling", f"Create profile for {target} based on: {sanitized_artifacts}."
         )
 
-        identities_md = f"### Identified Usernames: {', '.join(self.potential_identities.usernames)}\n### Identified Full Names: {', '.join(self.potential_identities.fullname)}\n### Identified Emails: {', '.join(self.potential_identities.email)}"
+        identities_md = f"### Identified Usernames: {', '.join(self.potential_identities['usernames'])}\n### Identified Full Names: {', '.join(self.potential_identities['fullname'])}\n### Identified Emails: {', '.join(self.potential_identities['email'])}"
 
         return f"# Intelligence Report: {target}\n\n## 0. Identities Identified\n{identities_md}\n\n## 1. Summary\n{summary}\n\n## 2. Profiling\n{profiling_data}\n\n## 3. Evidence Log\n{evidence_table}"

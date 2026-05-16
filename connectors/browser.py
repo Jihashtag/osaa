@@ -209,7 +209,7 @@ class BrowserConnector(BaseConnector):
             pass
         try:
             # If we clicked on something this should fail, if not it will succeed
-            num_click = len(button)
+            len_click = len(button)
             for x in range(0, len_click):
                 buttons = driver.find_elements(
                     webdriver.common.by.By.TAG_NAME, "button"
