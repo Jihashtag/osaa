@@ -1,11 +1,20 @@
+import os
 import requests
-import logging
 
-logger = logging.getLogger(__name__)
+from logger import get_logger
+from unittest.mock import patch
 
+logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
-def load_proxies(file_path):
+PROXIES = None
+
+def load_proxies(file_path=None):
     """Loads proxies from a file. Preserves scheme if present, defaults to http://."""
+
+    global PROXIES
+
+    if PROXIES is not None:
+        return PROXIES
     proxies = []
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -18,6 +27,7 @@ def load_proxies(file_path):
                         proxies.append(f"http://{line}")
     except Exception as e:
         logger.error(f"Error loading proxy list: {e}")
+    PROXIES = proxies
     return proxies
 
 
@@ -29,11 +39,16 @@ def check_proxy(proxy, timeout=5):
             "https": proxy,
         }
         # Using duckduckgo as it's the target for ddgs anyway
-        response = requests.get(
-            "https://duckduckgo.com", proxies=proxies, timeout=timeout
-        )
-        return response.status_code == 200
-    except Exception:
+        with patch("urllib3.connectionpool.warnings.warn", return_value=None):
+            response = requests.get(
+                "https://duckduckgo.com",
+                proxies=proxies,
+                timeout=timeout,
+                verify=False
+            )
+            return response.status_code == 200
+    except Exception as e:
+        logger.info(f"Error in {proxy} check: {e}")
         return False
 
 

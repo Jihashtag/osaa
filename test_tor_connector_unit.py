@@ -20,11 +20,11 @@ class TestTorConnector(unittest.TestCase):
         mock_output.side_effect = CalledProcessError(1, "pgrep")
         self.assertFalse(self.connector._is_tor_running())
 
-    @patch("osaa.connectors.tor.stealth")
-    @patch("osaa.connectors.tor.uc.Chrome")
+    @patch("connectors.tor.stealth")
+    @patch("connectors.tor.uc.Chrome")
     def test_setup_driver_proxy(self, mock_chrome, mock_stealth):
         # Verify that proxy-server argument is passed to ChromeOptions
-        with patch("osaa.connectors.tor.uc.ChromeOptions") as mock_options:
+        with patch("connectors.tor.uc.ChromeOptions") as mock_options:
             self.connector._setup_driver()
             # Check if any call to add_argument included the tor proxy
             proxy_arg_found = False

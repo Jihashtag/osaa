@@ -1,8 +1,8 @@
 import gc
-import logging
 import os
 import asyncio
 
+from logger import get_logger
 from random import shuffle
 from typing import Dict, List
 
@@ -16,7 +16,7 @@ from identity_utils import update_identity_from_results
 from models import MasterIdentity
 from proxy_utils import check_proxy
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 
 class Orchestrator:
@@ -51,10 +51,12 @@ class Orchestrator:
 
     async def run_full_pipeline(self, targets: List[Dict[str, str]]):
         self.connectors["browser"].set_targets(targets)
+        browser = self.connectors["browser"]
         i = 0
         len_target = len(targets)
         # Ensure we process at least the first targets if the list is small
         ratio = max(3, int(len_target * 0.33))
+
         for target in targets:
             i += 1
             if i > 3:
@@ -68,46 +70,35 @@ class Orchestrator:
             if target_val is None or not target_val:
                 continue
 
-            # Check proxies before steps 2, 3 & 4
             await self._update_working_proxies()
 
+            tasks = []
             # 1. Connectors (Holehe/Tookie/Holmes)
             for name, connector in self.connectors.items():
-                if name in ["tookie", "holehe", "holmes"]:
-                    try:
-                        if t_type in connector.supported_types:
-                            res = await connector.run(target_val)
-                            # Gather usernames / emails / fullnames
-                            update_identity_from_results(self.identity, res)
-                            # Extend artifacts and url to scrap
-                            self.identity.raw_artifacts.extend(
-                                r for r in res if r.target_type != "url"
-                            )
-                            self.identity.discovered_urls.extend(
-                                r.value for r in res if r.target_type == "url"
-                            )
-                    except Exception as e:
-                        logger.error(f"[x] {name} on {target_val}: {e}")
-                        continue
+                if name == "browser":
+                    continue
+                try:
+                    if t_type in connector.supported_types:
+                        tasks.append(connector.run(target_val, proxies=self.working_proxies))
+                except Exception as e:
+                    logger.error(f"[x] {name} on {target_val}: {e}")
+                    continue
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                # Gather usernames / emails / fullnames
+                update_identity_from_results(self.identity, res)
+                # Extend artifacts and url to scrap
+                self.identity.raw_artifacts.extend(
+                    r for r in res if r.target_type != "url"
+                )
+                self.identity.discovered_urls.extend(
+                    r.value for r in res if r.target_type == "url"
+                )
 
             # Force garabage collection as tools are used in way that might be unattended
             gc.collect()
-            # 2. Aggressive Search
-            searcher = self.connectors["search"]
-            search_res = await searcher.run(target_val, proxies=self.working_proxies)
-            self.identity.raw_artifacts.extend(search_res)
 
-            # 2.1 Tor Search
-            tor = self.connectors["tor"]
-            if t_type in tor.supported_types:
-                tor_res = await tor.run(target_val)
-                self.identity.raw_artifacts.extend(tor_res)
-
-            # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
-            gc.collect()
-
-            # 3. Browser
-            browser = self.connectors["browser"]
+            # 2. Browser
             urls = list(set(self.identity.discovered_urls))
             shuffle(urls)
             ratio_browser = len(urls) * 0.33
@@ -115,6 +106,7 @@ class Orchestrator:
             if i > 3:
                 urls = urls[: int(ratio_browser)]
 
+            await self._update_working_proxies()
             if self.working_proxies:
                 # Parallelize across proxies: sequential per proxy
                 num_proxies = len(self.working_proxies)
@@ -160,7 +152,8 @@ class Orchestrator:
             # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
             gc.collect()
 
-        # 4. Browser again but now search specifics usernames for additional informations
+        await self._update_working_proxies()
+        # 3. Browser again but now search specifics usernames for additional informations
         usernames = list(set(self.identity.username))
         if self.working_proxies:
             # Parallelize across proxies: sequential per proxy

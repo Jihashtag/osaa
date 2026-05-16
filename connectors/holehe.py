@@ -25,7 +25,7 @@ class HoleheConnector(BaseConnector):
     def supported_types(self) -> List[str]:
         return ["email"]
 
-    async def run(self, target: str) -> List[DiscoveryResult]:
+    async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         # Holehe uses a docker container.
         cmd = ["holele", target, "--no-color"]
 

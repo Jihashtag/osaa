@@ -24,7 +24,7 @@ class TookieConnector(BaseConnector):
     def supported_types(self) -> List[str]:
         return ["username", "fullname", "email"]
 
-    async def run(self, target: str) -> List[DiscoveryResult]:
+    async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         cmd = [
             "python3",
             "brib.py",

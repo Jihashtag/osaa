@@ -8,9 +8,9 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 @pytest.mark.asyncio
-@patch("osaa.connectors.browser.get_report_dir", return_value="/tmp/osaa_test")
-@patch("osaa.connectors.browser.uc.Chrome")
-@patch("osaa.connectors.browser.stealth")
+@patch("connectors.browser.get_report_dir", return_value="/tmp/osaa_test")
+@patch("connectors.browser.uc.Chrome")
+@patch("connectors.browser.stealth")
 async def test(mock_stealth, mock_chrome, mock_report_dir):
     # Mock driver
     mock_driver = MagicMock()
@@ -18,7 +18,7 @@ async def test(mock_stealth, mock_chrome, mock_report_dir):
     mock_driver.get_log.return_value = []
 
     # Mock response_checker to return True
-    with patch("osaa.connectors.browser.response_checker", return_value=True):
+    with patch("connectors.browser.response_checker", return_value=True):
         connector = BrowserConnector()
         # Mock internal methods to avoid actual network/browser activity
         with patch.object(

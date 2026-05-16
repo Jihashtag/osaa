@@ -19,7 +19,7 @@ class SearchConnector(BaseConnector):
         return ["query", "username", "email", "fullname"]
 
     async def run(
-        self, target: str, proxies: List[str] = None
+        self, target: str, proxies: List[str] = None, **kwargs
     ) -> List[DiscoveryResult]:
         dorks = (
             [
@@ -61,12 +61,18 @@ class SearchConnector(BaseConnector):
         results = []
         for query in dorks:
             success = False
-            for attempt in range(3):  # Exponential backoff retry
+            for attempt in range(2):  # Limit attempts with same proxy
                 try:
-                    with DDGS(proxy=proxy) as ddgs:
-                        # Randomize delay to mimic human speed
+                    kwargs = {"verify": False}
+                    if proxy is not None:
+                        kwargs["proxy"] = proxy if "https://" not in proxy else proxy[8:]
+                    with DDGS(**kwargs) as ddgs:
                         sleep(random.uniform(3, 5))
-                        res = list(ddgs.text(query, max_results=10))
+                        res = list(ddgs.text(
+                            query,
+                            safesearch="off",
+                            max_results=10,
+                        ))
                         for r in res:
                             results.append(
                                 DiscoveryResult(
@@ -83,17 +89,21 @@ class SearchConnector(BaseConnector):
                         if res:
                             success = True
                             break
+                        else:
+                            # If no error but no results, maybe query is bad?
+                            # Continue to fallback
+                            break
                 except Exception as e:
                     logger.warning(
                         f"[x] Search attempt {attempt+1} failed for {query} with proxy {proxy}: {e}"
                     )
-                    sleep(5 * (attempt + 1))
+                    sleep(2 * (attempt + 1))
 
             if not success:
                 # Exhaustive fallback: Search without quotes if query fails
                 try:
                     logger.info(f"[*] Falling back to broader query for {query}")
-                    with DDGS(proxy=proxy) as ddgs:
+                    with DDGS(proxy=proxy, verify=False) as ddgs:
                         res = list(ddgs.text(query.replace('"', ""), max_results=5))
                         for r in res:
                             results.append(

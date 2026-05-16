@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 from connectors.base import BaseConnector, DiscoveryResult
 from logger import get_logger
 from path_utils import get_report_dir
+from proxy_utils import load_proxies, get_working_proxies
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -57,34 +58,14 @@ class HolmesConnector(BaseConnector):
         if not os.path.exists(proxy_all):
             return
 
-        async def check_proxy(proxy):
-            try:
-                ip, port = proxy.strip().split(":")
-                start = asyncio.get_event_loop().time()
-                await asyncio.shield(
-                    asyncio.wait(asyncio.open_connection(ip, int(port)), 1)
-                )
-                return (
-                    proxy.strip()
-                    if asyncio.get_event_loop().time() - start <= 1.0
-                    else None
-                )
-            except:
-                return None
-
         async def run_filtering():
             with open(proxy_all, "r") as f:
                 proxies = [line.strip() for line in f if line.strip()]
 
-            tasks = [check_proxy(p) for p in proxies]
-            results = await asyncio.gather(*tasks)
-            working = [r for r in results if r]
+            working = await get_working_proxies(proxies)
             logger.info(f"Working proxies: {working}")
             if not any(working):
-                working = [
-                    "195.158.8.123:3128",
-                    "151.240.0.20:1664",
-                ]  # To fill individually
+                working = await get_working_proxies(load_proxies())
 
             with open(proxy_out, "w") as f:
                 for p in working:
@@ -209,7 +190,7 @@ class HolmesConnector(BaseConnector):
             os.chdir(original_dir)
             return []
 
-    async def run(self, target: str) -> List[DiscoveryResult]:
+    async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         loop = asyncio.get_running_loop()
 
         try:

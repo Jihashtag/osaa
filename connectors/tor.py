@@ -77,9 +77,14 @@ class TorConnector(BaseConnector):
             driver.get("https://onion.live/?category=search%20engine")
             sleep(random.uniform(1, 3))
             # Extract links that look like onion links or go to search engine pages
-            links = driver.find_elements(By.TAG_NAME, "a")
+            links = driver.find_elements(By.TAG_NAME, "span")
             for link in links:
-                href = link.get_attribute("href")
+                try:
+                    if link.get_attribute("class") != "single-mirror-text":
+                        continue
+                except:
+                    continue
+                href = link.text
                 if href and ".onion" in href:
                     engines.append(href)
             # Filter and deduplicate
@@ -89,7 +94,7 @@ class TorConnector(BaseConnector):
             logger.error(f"[x] Tor - Error discovering engines: {e}")
         return engines
 
-    async def run(self, target: str) -> List[DiscoveryResult]:
+    async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         from path_utils import get_report_dir
 
         self.res_dir = get_report_dir()

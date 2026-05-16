@@ -29,7 +29,7 @@ def test_check_proxy(mock_get):
 
 
 @pytest.mark.asyncio
-@patch("osaa.proxy_utils.check_proxy")
+@patch("proxy_utils.check_proxy")
 async def test_get_working_proxies(mock_check):
     mock_check.side_effect = [True, False, True]
     proxies = ["p1", "p2", "p3"]
@@ -38,7 +38,7 @@ async def test_get_working_proxies(mock_check):
 
 
 @pytest.mark.asyncio
-@patch("osaa.orchestrator.check_proxy")
+@patch("orchestrator.check_proxy")
 async def test_orchestrator_proxy_update(mock_check):
     mock_check.side_effect = [True, False]
     orchestrator = Orchestrator(proxies=["p1", "p2"])
@@ -47,7 +47,7 @@ async def test_orchestrator_proxy_update(mock_check):
 
 
 @pytest.mark.asyncio
-@patch("osaa.connectors.searcher.DDGS")
+@patch("connectors.searcher.DDGS")
 async def test_searcher_multi_proxy(mock_ddgs):
     # Mock DDGS results
     mock_instance = MagicMock()
@@ -70,7 +70,7 @@ async def test_searcher_multi_proxy(mock_ddgs):
 
 
 @pytest.mark.asyncio
-@patch("osaa.connectors.browser.uc.Chrome")
+@patch("connectors.browser.uc.Chrome")
 async def test_browser_proxy(mock_chrome):
     browser = BrowserConnector()
     # Mock driver
@@ -80,7 +80,7 @@ async def test_browser_proxy(mock_chrome):
 
     # We need to mock _content_checker to return something
     with patch(
-        "osaa.connectors.browser.get_report_dir", return_value="/tmp/test_report"
+        "connectors.browser.get_report_dir", return_value="/tmp/test_report"
     ):
         with patch.object(
             BrowserConnector, "_content_checker", return_value=("path", "content")

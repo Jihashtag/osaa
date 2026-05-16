@@ -68,8 +68,13 @@ class BrowserConnector(BaseConnector):
         options.add_argument("--headless=new")
         options.add_argument("disable-infobars")
         options.add_argument("--no-sandbox")
+        options.add_argument("--ignore-certificate-errors")
+        options.add_argument("--ignore-ssl-errors")
         if proxy:
-            options.add_argument(f"--proxy-server={proxy}")
+            if "https://" not in proxy:
+                options.add_argument(f"--proxy-server={proxy}")
+            else:
+                options.add_argument(f"--proxy-server={proxy[8:]}")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         driver = uc.Chrome(options=options, version_main=147)
         stealth(
@@ -220,7 +225,7 @@ class BrowserConnector(BaseConnector):
             # We propably clicked already
             pass
 
-    async def run(self, target_url: str, proxy: str = None) -> List[DiscoveryResult]:
+    async def run(self, target_url: str, proxy: str = None, **kwargs) -> List[DiscoveryResult]:
         self.res_dir = get_report_dir()
 
         if not target_url.startswith("http"):
