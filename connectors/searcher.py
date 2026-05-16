@@ -65,7 +65,7 @@ class SearchConnector(BaseConnector):
                 try:
                     kwargs = {"verify": False}
                     if proxy is not None:
-                        kwargs["proxy"] = proxy if "https://" not in proxy else proxy[8:]
+                        kwargs["proxy"] = proxy if "http://" not in proxy else proxy[8:]
                     with DDGS(**kwargs) as ddgs:
                         sleep(random.uniform(3, 5))
                         res = list(ddgs.text(
