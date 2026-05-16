@@ -1,0 +1,17 @@
+# Core requirements
+requests
+beautifulsoup4
+lxml
+phonenumbers
+pdfkit
+colorama
+argparse
+selenium
+webdriver-manager
+# Orchestration
+pydantic
+python-dotenv
+#holele
+bs4
+termcolor
+setuptools
