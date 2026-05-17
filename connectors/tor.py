@@ -18,8 +18,9 @@ logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 ENGINE_LINKS = [
     "https://onion.live/?category=search%20engine",
-    "http://5n4qdkw2wavc55peppyrelmb2rgsx7ohcb2tkxhub2gyfurxulfyd3id.onion/index.php?cat=Search"
+    "http://5n4qdkw2wavc55peppyrelmb2rgsx7ohcb2tkxhub2gyfurxulfyd3id.onion/index.php?cat=Search",
 ]
+
 
 class TorConnector(BaseConnector):
     def __init__(self):
@@ -85,7 +86,10 @@ class TorConnector(BaseConnector):
                 links = driver.find_elements(By.TAG_NAME, "span")
                 for link in links:
                     try:
-                        if link.get_attribute("class") not in ["single-mirror-text", "link-onion"]:
+                        if link.get_attribute("class") not in [
+                            "single-mirror-text",
+                            "link-onion",
+                        ]:
                             continue
                     except:
                         continue
@@ -130,10 +134,10 @@ class TorConnector(BaseConnector):
                     inputs = driver.find_elements(By.TAG_NAME, "input")
                     search_box = None
                     for i in inputs:
-                        if (
-                            i.get_attribute("type") in ["text", "search"]
-                            or i.get_attribute("name") in ["q", "search", "query"]
-                        ):
+                        if i.get_attribute("type") in [
+                            "text",
+                            "search",
+                        ] or i.get_attribute("name") in ["q", "search", "query"]:
                             search_box = i
                             break
 
@@ -141,11 +145,10 @@ class TorConnector(BaseConnector):
 
                     if search_box:
                         search_box.send_keys(target)
-tmpt
                         search_box.send_keys(Keys.RETURN)
                     else:
                         # try with most common format
-                        driver.get(f'{engine_url}/search?q={target}')
+                        driver.get(f"{engine_url}/search?q={target}")
 
                     sleep(random.uniform(1, 3))
                     # Handle captcha if needed
@@ -155,14 +158,10 @@ tmpt
                     content = driver.find_element(By.TAG_NAME, "body").text
                     if target.lower() in content.lower():
                         content_hash = hashlib.md5(content.encode()).hexdigest()
-                        raw_path = os.path.join(
-                            self.res_dir, f"tor_{content_hash}.raw"
-                        )
+                        raw_path = os.path.join(self.res_dir, f"tor_{content_hash}.raw")
                         with open(raw_path, "w", encoding="utf-8") as f:
                             f.write(content)
-                        driver.save_screenshot(
-                            raw_path.replace(".raw", "_screen.png")
-                        )
+                        driver.save_screenshot(raw_path.replace(".raw", "_screen.png"))
 
                         results.append(
                             DiscoveryResult(

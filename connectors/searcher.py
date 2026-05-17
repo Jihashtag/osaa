@@ -68,11 +68,13 @@ class SearchConnector(BaseConnector):
                         kwargs["proxy"] = proxy if "http://" not in proxy else proxy[8:]
                     with DDGS(**kwargs) as ddgs:
                         sleep(random.uniform(3, 5))
-                        res = list(ddgs.text(
-                            query,
-                            safesearch="off",
-                            max_results=10,
-                        ))
+                        res = list(
+                            ddgs.text(
+                                query,
+                                safesearch="off",
+                                max_results=10,
+                            )
+                        )
                         for r in res:
                             results.append(
                                 DiscoveryResult(

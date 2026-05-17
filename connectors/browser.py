@@ -76,7 +76,12 @@ class BrowserConnector(BaseConnector):
             else:
                 options.add_argument(f"--proxy-server={proxy[8:]}")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-        driver = uc.Chrome(options=options, version_main=147)
+        driver = uc.Chrome(
+            options=options,
+            # user_data_dir="cookie_folder",
+            keep_alive=False,
+            version_main=147,
+        )
         stealth(
             driver,
             languages=["en-US", "en", "fr-FR", "fr"],
@@ -194,7 +199,7 @@ class BrowserConnector(BaseConnector):
 
     def _navigate(self, driver):
         try:
-            button = driver.find_elements(webdriver.common.by.By.TAG_NAME, "button")
+            button = driver.find_elements(By.TAG_NAME, "button")
             for x in button:
                 if "allow" in x.text.lower() or "accepter" in x.text.lower():
                     x.click()
@@ -203,7 +208,7 @@ class BrowserConnector(BaseConnector):
             # If there are multiple one or none it might go wild
             pass
         try:
-            a = driver.find_elements(webdriver.common.by.By.TAG_NAME, "a")
+            a = driver.find_elements(By.TAG_NAME, "a")
             for x in a:
                 if "allow" in x.text.lower() or "accepter" in x.text.lower():
                     x.click()
@@ -216,16 +221,16 @@ class BrowserConnector(BaseConnector):
             # If we clicked on something this should fail, if not it will succeed
             len_click = len(button)
             for x in range(0, len_click):
-                buttons = driver.find_elements(
-                    webdriver.common.by.By.TAG_NAME, "button"
-                )
+                buttons = driver.find_elements(By.TAG_NAME, "button")
                 button[x].click()
                 sleep(random.uniform(0, 2))
         except:
             # We propably clicked already
             pass
 
-    async def run(self, target_url: str, proxy: str = None, **kwargs) -> List[DiscoveryResult]:
+    async def run(
+        self, target_url: str, proxy: str = None, **kwargs
+    ) -> List[DiscoveryResult]:
         self.res_dir = get_report_dir()
 
         if not target_url.startswith("http"):

@@ -79,9 +79,7 @@ async def test_browser_proxy(mock_chrome):
     mock_driver.get_log.return_value = []
 
     # We need to mock _content_checker to return something
-    with patch(
-        "connectors.browser.get_report_dir", return_value="/tmp/test_report"
-    ):
+    with patch("connectors.browser.get_report_dir", return_value="/tmp/test_report"):
         with patch.object(
             BrowserConnector, "_content_checker", return_value=("path", "content")
         ):

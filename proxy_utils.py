@@ -8,6 +8,7 @@ logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 PROXIES = None
 
+
 def load_proxies(file_path=None):
     """Loads proxies from a file. Preserves scheme if present, defaults to http://."""
 
@@ -41,10 +42,7 @@ def check_proxy(proxy, timeout=5):
         # Using duckduckgo as it's the target for ddgs anyway
         with patch("urllib3.connectionpool.warnings.warn", return_value=None):
             response = requests.get(
-                "https://duckduckgo.com",
-                proxies=proxies,
-                timeout=timeout,
-                verify=False
+                "https://duckduckgo.com", proxies=proxies, timeout=timeout, verify=False
             )
             return response.status_code == 200
     except Exception as e:
