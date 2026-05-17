@@ -94,7 +94,7 @@ DO NOT USE placeholders like '<...>'. Write complete sentences.
         elif self.agent_type == "ollama":
             # For Ollama, we combine system prompt and prompt if needed
             full_prompt = f"{self.system_prompt}\n\n{prompt}"
-            cmd = ["ollama", "run", self.model, full_prompt]
+            cmd = ["ollama", "run", self.model, full_prompt, "--experimental-yolo", "--format", "json"]
         elif self.agent_type == "gemini":
             # Using the gemini CLI with --prompt
             cmd = ["gemini", "--prompt", prompt]
