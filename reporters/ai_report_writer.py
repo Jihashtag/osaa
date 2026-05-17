@@ -103,9 +103,9 @@ Source:
 
     def generate_report(self, target: str, identity: Any) -> str:
         self.potential_identities = {
-            "usernames": list(set(identity.username)),
-            "fullname": list(set(identity.fullname)),
-            "email": list(set(identity.email)),
+            "usernames": list(set(un for un in identity.username if un)),
+            "fullname": list(set(fn for fn in identity.fullname if fn)),
+            "email": list(set(mail for mail in identity.email if mail)),
         }
         sanitized_artifacts = self._sanitize_artifacts(identity.raw_artifacts)
         evidence_table = self._generate_evidence_table(identity.raw_artifacts)

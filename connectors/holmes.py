@@ -90,7 +90,9 @@ class HolmesConnector(BaseConnector):
 
         # We use path_utils.get_report_dir which anchors to original CWD
         report_dir = get_report_dir(target)
-        report_path = os.path.join(report_dir, f"{target}_report.txt")
+        report_path = os.path.join(
+            self.holmes_dir, f"GUI/Reports/E-Mail/{target}/{target}.txt"
+        )
 
         original_dir = os.getcwd()
         try:
@@ -109,7 +111,7 @@ class HolmesConnector(BaseConnector):
             ):
                 from Core.E_Mail import Mail_search
 
-                Mail_search.searcher(target, report_path, "default")
+                Mail_search.Search(target, "default")
 
             results = []
             if os.path.exists(report_path):
@@ -119,7 +121,9 @@ class HolmesConnector(BaseConnector):
                         DiscoveryResult("holmes", "email", target, {"content": content})
                     )
                 os.rename(report_path, f"{report_dir}/email_{target}_python_holmes.txt")
-            logger.info(f"[✓] holmes: {target}")
+                logger.info(f"[✓] holmes: {target}")
+            else:
+                logger.info(f"[!] holmes: {target}: Report not found")
             os.chdir(original_dir)
             return results
 
@@ -135,7 +139,9 @@ class HolmesConnector(BaseConnector):
         # We use path_utils.get_report_dir which anchors to original CWD
         report_dir = get_report_dir(target)
         target_slug = target.replace(" ", "_")
-        report_path = f"GUI/Reports/People/{target_slug}/{target_slug}.txt"
+        report_path = os.path.join(
+            self.holmes_dir, f"GUI/Reports/People/{target_slug}/{target_slug}.txt"
+        )
         final_report_path = f"{report_dir}/user_{target_slug}_python_holmes.txt"
 
         # Check if already exists
@@ -181,7 +187,25 @@ class HolmesConnector(BaseConnector):
                     )
                 os.makedirs(report_dir, exist_ok=True)
                 os.rename(report_path, final_report_path)
-            logger.info(f"[✓] holmes: {target}")
+                logger.info(f"[✓] holmes: {target}")
+            else:
+                logger.info(f"[!] holmes: {target}: Report not found")
+
+            # Get generated dorks
+            if os.path.exists(
+                f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target}.txt"
+            ):
+                with open(
+                    f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target}.txt", "r"
+                ) as f:
+                    ret = f.readlines()
+                    for line in ret:
+                        if line.startswith("| http"):
+                            results.append(
+                                DiscoveryResult("holmes", "url", target, line["2:"])
+                            )
+            else:
+                logger.info(f"[!] holmes: {target}: Dorks not found")
             os.chdir(original_dir)
             return results
 

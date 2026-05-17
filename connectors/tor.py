@@ -171,6 +171,13 @@ class TorConnector(BaseConnector):
                                 metadata={"raw_path": raw_path},
                             )
                         )
+                        logger.info(
+                            f"[✓] Tor - Success searching on {engine_url}: {target}"
+                        )
+                    else:
+                        logger.info(
+                            f"[!] Tor - No results on {engine_url} for : {target}"
+                        )
 
                     # Navigate back using driver.back()
                     driver.back()
@@ -207,6 +214,9 @@ class TorConnector(BaseConnector):
                                 value=target,
                                 metadata={"raw_path": raw_path},
                             )
+                        )
+                        logger.info(
+                            f"[✓] Tor - Success searching on {engine}: {target}"
                         )
                 except Exception as e:
                     logger.error(f"[x] Tor - Error searching on {engine}: {e}")
