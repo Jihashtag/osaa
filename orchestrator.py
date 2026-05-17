@@ -102,6 +102,7 @@ class Orchestrator:
 
             # 2. Browser
             urls = list(set(self.identity.discovered_urls))
+            # TODO : Order by pertinence (similarities with default identity ?)
             shuffle(urls)
             ratio_browser = len(urls) * 0.33
 
