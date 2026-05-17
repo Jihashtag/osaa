@@ -199,7 +199,7 @@ class HolmesConnector(BaseConnector):
 
             # Get generated dorks
             if os.path.exists(
-                f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}.txt"
+                f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt"
             ):
                 with open(
                     f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt", "r"
