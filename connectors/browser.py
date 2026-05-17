@@ -26,7 +26,7 @@ NAVIGATE_TO = [
     "https://www.perplexity.ai/search/new?pc=chrome&q=",
     "https://www.bing.com/search?pc=MOZI&form=MOZLBR&q=",
     "https://www.google.com/search?sourceid=chrome&ie=UTF-8&q=",
-    "https://yandex.com/searchi?search_source=yacom_desktop_common&text=",
+    "https://yandex.com/search?search_source=yacom_desktop_common&text=",
 ]
 
 
