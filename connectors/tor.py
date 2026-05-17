@@ -16,6 +16,10 @@ from connectors.base import BaseConnector, DiscoveryResult
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
+ENGINE_LINKS = [
+    "https://onion.live/?category=search%20engine",
+    "http://5n4qdkw2wavc55peppyrelmb2rgsx7ohcb2tkxhub2gyfurxulfyd3id.onion/index.php?cat=Search"
+]
 
 class TorConnector(BaseConnector):
     def __init__(self):
@@ -73,25 +77,26 @@ class TorConnector(BaseConnector):
     def _search_engine_discovery(self, driver: webdriver.Chrome) -> List[str]:
         """Finds onion search engines from onion.live."""
         engines = []
-        try:
-            driver.get("https://onion.live/?category=search%20engine")
-            sleep(random.uniform(1, 3))
-            # Extract links that look like onion links or go to search engine pages
-            links = driver.find_elements(By.TAG_NAME, "span")
-            for link in links:
-                try:
-                    if link.get_attribute("class") != "single-mirror-text":
+        for discovery_link in ENGINE_LINKS:
+            try:
+                driver.get(discovery_link)
+                sleep(random.uniform(1, 3))
+                # Extract links that look like onion links or go to search engine pages
+                links = driver.find_elements(By.TAG_NAME, "span")
+                for link in links:
+                    try:
+                        if link.get_attribute("class") not in ["single-mirror-text", "link-onion"]:
+                            continue
+                    except:
                         continue
-                except:
-                    continue
-                href = link.text
-                if href and ".onion" in href:
-                    engines.append(href)
-            # Filter and deduplicate
-            engines = list(set(engines))
-            logger.info(f"[*] Tor - Discovered {len(engines)} onion search engines")
-        except Exception as e:
-            logger.error(f"[x] Tor - Error discovering engines: {e}")
+                    href = link.text
+                    if href and ".onion" in href:
+                        engines.append(href)
+                logger.info(f"[*] Tor - Discovered {len(engines)} onion search engines")
+            except Exception as e:
+                logger.error(f"[x] Tor - Error discovering engines: {e}")
+        # Filter and deduplicate
+        engines = list(set(engines))
         return engines
 
     async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
@@ -126,8 +131,8 @@ class TorConnector(BaseConnector):
                     search_box = None
                     for i in inputs:
                         if (
-                            i.get_attribute("type") == "text"
-                            or i.get_attribute("name") == "q"
+                            i.get_attribute("type") in ["text", "search"]
+                            or i.get_attribute("name") in ["q", "search", "query"]
                         ):
                             search_box = i
                             break
@@ -136,33 +141,37 @@ class TorConnector(BaseConnector):
 
                     if search_box:
                         search_box.send_keys(target)
+tmpt
                         search_box.send_keys(Keys.RETURN)
-                        sleep(random.uniform(1, 3))
+                    else:
+                        # try with most common format
+                        driver.get(f'{engine_url}/search?q={target}')
 
-                        # Handle captcha if needed
-                        self._handle_captcha(driver)
+                    sleep(random.uniform(1, 3))
+                    # Handle captcha if needed
+                    self._handle_captcha(driver)
 
-                        # Check content
-                        content = driver.find_element(By.TAG_NAME, "body").text
-                        if target.lower() in content.lower():
-                            content_hash = hashlib.md5(content.encode()).hexdigest()
-                            raw_path = os.path.join(
-                                self.res_dir, f"tor_{content_hash}.raw"
-                            )
-                            with open(raw_path, "w", encoding="utf-8") as f:
-                                f.write(content)
-                            driver.save_screenshot(
-                                raw_path.replace(".raw", "_screen.png")
-                            )
+                    # Check content
+                    content = driver.find_element(By.TAG_NAME, "body").text
+                    if target.lower() in content.lower():
+                        content_hash = hashlib.md5(content.encode()).hexdigest()
+                        raw_path = os.path.join(
+                            self.res_dir, f"tor_{content_hash}.raw"
+                        )
+                        with open(raw_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        driver.save_screenshot(
+                            raw_path.replace(".raw", "_screen.png")
+                        )
 
-                            results.append(
-                                DiscoveryResult(
-                                    source_tool=f"tor_{engine_url}",
-                                    target_type="search",
-                                    value=target,
-                                    metadata={"raw_path": raw_path},
-                                )
+                        results.append(
+                            DiscoveryResult(
+                                source_tool=f"tor_{engine_url}",
+                                target_type="search",
+                                value=target,
+                                metadata={"raw_path": raw_path},
                             )
+                        )
 
                     # Navigate back using driver.back()
                     driver.back()
