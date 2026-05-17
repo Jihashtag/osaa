@@ -165,6 +165,12 @@ class HolmesConnector(BaseConnector):
             ), patch("Core.Support.Creds.Sender.mail", return_value=None), patch(
                 "Core.Support.Language.Translation", new=MockTranslation
             ), patch(
+                "builtins.print", new=logger.info
+            ), patch(
+                "Core.Support.Encoding.Encoder.Encode", return_value=None
+            ), patch(
+                "Core.Support.FileTransfer.Transfer.File", return_value=None
+            ), patch(
                 "Core.Support.Clear.Screen.Clear", return_value=None
             ), patch(
                 "Core.Support.Banner_Selector.Random.Get_Banner", return_value=None
@@ -189,14 +195,14 @@ class HolmesConnector(BaseConnector):
                 os.rename(report_path, final_report_path)
                 logger.info(f"[✓] holmes: {target}")
             else:
-                logger.info(f"[!] holmes: {target}: Report not found")
+                logger.info(f"[!] holmes: {target_slug}: Report not found")
 
             # Get generated dorks
             if os.path.exists(
-                f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target}.txt"
+                f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}.txt"
             ):
                 with open(
-                    f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target}_Dorks.txt", "r"
+                    f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt", "r"
                 ) as f:
                     ret = f.readlines()
                     for line in ret:
@@ -205,7 +211,7 @@ class HolmesConnector(BaseConnector):
                                 DiscoveryResult("holmes", "url", target, line["2:"])
                             )
             else:
-                logger.info(f"[!] holmes: {target}: Dorks not found")
+                logger.info(f"[!] holmes: {target_slug}: Dorks not found")
             os.chdir(original_dir)
             return results
 
