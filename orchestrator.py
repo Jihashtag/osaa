@@ -77,7 +77,7 @@ class Orchestrator:
                     continue
                 try:
                     if t_type in connector.supported_types:
-                        if name == "searcher":
+                        if name == "search":
                             await self._update_working_proxies()
                         tasks.append(
                             connector.run(target_val, proxies=self.working_proxies)
