@@ -10,6 +10,7 @@ from path_utils import get_report_dir
 from reporters.ai_report_writer import AIReportWriter
 from proxy_utils import load_proxies
 from random import shuffle
+from models import IdentityAnchor
 
 
 async def main():
@@ -29,6 +30,9 @@ async def main():
     parser.add_argument("--model", help="Model the AI agent should use")
     parser.add_argument(
         "--proxy_list", help="Path to a file containing proxies (ip:port)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print execution plan without running"
     )
 
     args = parser.parse_args()
@@ -69,10 +73,12 @@ async def main():
     orchestrator = Orchestrator(proxies=proxies)
 
     for key, val in target.items():
+        if not val:
+            continue
         if key == "username":
-            orchestrator.identity.username.append(val)
+            orchestrator.identity.username.append(IdentityAnchor(value=val))
         if key == "email":
-            orchestrator.identity.email.append(val)
+            orchestrator.identity.email.append(IdentityAnchor(value=val))
         if key == "fullname":
             orchestrator.identity.fullname.append(val)
 

@@ -12,6 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from logger import get_logger
+from utils.scraper import handle_captcha
 from connectors.base import BaseConnector, DiscoveryResult
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
@@ -64,16 +65,7 @@ class TorConnector(BaseConnector):
 
     def _handle_captcha(self, driver: webdriver.Chrome):
         """If a captcha is detected, try clicking submit buttons."""
-        try:
-            submits = driver.find_elements(By.XPATH, "//input[@type='submit']")
-            for submit in submits:
-                logger.info(
-                    f"[*] Tor - Potential captcha detected, clicking submit: {submit.get_attribute('name')}"
-                )
-                submit.click()
-                sleep(random.uniform(0.5, 1.5))
-        except Exception as e:
-            logger.error(f"[x] Tor - Error handling captcha: {e}")
+        handle_captcha(driver)
 
     def _search_engine_discovery(self, driver: webdriver.Chrome) -> List[str]:
         """Finds onion search engines from onion.live."""

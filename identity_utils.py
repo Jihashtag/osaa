@@ -1,10 +1,18 @@
+import hashlib
 import binascii
 
 from random import randbytes
 from typing import List, Any
 
+
+def sha256_hex(val: str) -> str:
+    """Returns the SHA256 hex digest of a string, lowercased."""
+    return hashlib.sha256(val.strip().lower().encode("utf-8")).hexdigest()
+
+
 from connectors.base import DiscoveryResult
 from path_utils import get_report_dir
+from models import IdentityAnchor
 
 
 def update_identity_from_results(identity, results: List[DiscoveryResult]):
@@ -12,17 +20,23 @@ def update_identity_from_results(identity, results: List[DiscoveryResult]):
     Populates MasterIdentity from discovery results.
     Maps tool-specific output to standard model fields.
     """
-    if not results or not any(results):
+    if not results or not isinstance(results, list) or not any(results):
         return
     for res in results:
         if not res:
             continue
         if res.target_type == "email":
-            if res.value not in identity.email:
-                identity.email.append(res.value)
+            existing = [a.value for a in identity.email]
+            if res.value not in existing:
+                identity.email.append(
+                    IdentityAnchor(value=res.value, aggregate_confidence=res.confidence)
+                )
         elif res.target_type == "username":
-            if res.value not in identity.username:
-                identity.username.append(res.value)
+            existing = [a.value for a in identity.username]
+            if res.value not in existing:
+                identity.username.append(
+                    IdentityAnchor(value=res.value, aggregate_confidence=res.confidence)
+                )
         elif res.target_type in ["url", "query"]:
             if res.value not in identity.discovered_urls:
                 identity.discovered_urls.append(res.value)

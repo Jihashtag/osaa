@@ -14,17 +14,16 @@ class AIAnalyst:
     def __init__(self, agent_type: str = "lms", model_name: str = None):
         self.agent_type = agent_type.lower()
         self.model = model_name or self._get_default_model(self.agent_type)
-        self.system_prompt = """# You are a Master Intelligence Analyst and Clinical Psychologist.
-**Analyze the data provided rigorously.**
-Provide a complete, detailed, non-generic psychological analysis.
-**STRICTLY PROHIBITED: Do not use placeholders like '<...>', '[...]', or 'Section generation failed'.**
-Provide detailed analysis based solely on the provided OSINT data.
-If data is insufficient for a specific dimension, provide an educated inference or state "Insufficient data provided" in a complete sentence, but never use generic bracketed placeholders.
-Get a good understanding of the subject/target
-**Stay factual**
-**Mention Sources or quote data**
-Return in  <answer> **ONLY** perfectly formed JSON objects.
-**No conversational filler.**"""
+        self.system_prompt = self._load_prompt("reviewer.md")
+
+    def _load_prompt(self, filename: str) -> str:
+        """Loads a prompt from the prompts directory."""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_dir, "prompts", filename)
+        if not os.path.exists(path):
+            return "You are a helpful assistant."
+        with open(path, "r") as f:
+            return f.read().strip()
 
     def _get_default_model(self, agent_type: str) -> str:
         if agent_type == "lms":
@@ -94,7 +93,15 @@ DO NOT USE placeholders like '<...>'. Write complete sentences.
         elif self.agent_type == "ollama":
             # For Ollama, we combine system prompt and prompt if needed
             full_prompt = f"{self.system_prompt}\n\n{prompt}"
-            cmd = ["ollama", "run", self.model, full_prompt, "--experimental-yolo", "--format", "json"]
+            cmd = [
+                "ollama",
+                "run",
+                self.model,
+                full_prompt,
+                "--experimental-yolo",
+                "--format",
+                "json",
+            ]
         elif self.agent_type == "gemini":
             # Using the gemini CLI with --prompt
             cmd = ["gemini", "--prompt", prompt]

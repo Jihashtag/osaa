@@ -1,6 +1,7 @@
 import gc
 import os
 import asyncio
+from datetime import datetime
 
 from logger import get_logger
 from random import shuffle
@@ -12,6 +13,7 @@ from connectors.searcher import SearchConnector
 from connectors.tookie import TookieConnector
 from connectors.holehe import HoleheConnector
 from connectors.holmes import HolmesConnector
+from connectors.breach import BreachConnector
 from identity_utils import update_identity_from_results
 from models import MasterIdentity
 from proxy_utils import check_proxy
@@ -28,10 +30,50 @@ class Orchestrator:
             "tookie": TookieConnector(os.environ.get("TOOKIE_DIR", None)),
             "holehe": HoleheConnector(os.environ.get("HOLEHE_DIR", None)),
             "holmes": HolmesConnector(os.environ.get("HOLMES_DIR", None)),
+            "breach": BreachConnector(),
         }
         self.identity = MasterIdentity()
         self.proxies = proxies or []
         self.working_proxies = []
+        self.semaphore = asyncio.Semaphore(5)
+        self.execution_log = []
+
+    async def _run_with_semaphore(
+        self, name: str, connector, target: str, proxies: List[str] = None, **kwargs
+    ):
+        """Runs a connector with semaphore to limit concurrency to 5."""
+        async with self.semaphore:
+            try:
+                if name == "browser":
+                    # Browser uses single 'proxy' parameter instead of proxies list
+                    proxy = proxies[0] if proxies else None
+                    result = await connector.run(target, proxy=proxy, **kwargs)
+                else:
+                    result = await connector.run(target, proxies=proxies, **kwargs)
+                self.execution_log.append(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "tool": name,
+                        "target": target,
+                        "status": "success",
+                        "artifacts_count": (
+                            len(result) if isinstance(result, list) else 0
+                        ),
+                    }
+                )
+                return result
+            except Exception as e:
+                self.execution_log.append(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "tool": name,
+                        "target": target,
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
+                logger.error(f"[x] {name} on {target}: {e}")
+                return []
 
     async def _update_working_proxies(self):
         """Checks which proxies are up."""
@@ -80,13 +122,18 @@ class Orchestrator:
                         if name == "search":
                             await self._update_working_proxies()
                         tasks.append(
-                            connector.run(target_val, proxies=self.working_proxies)
+                            self._run_with_semaphore(
+                                name, connector, target_val, self.working_proxies
+                            )
                         )
                 except Exception as e:
                     logger.error(f"[x] {name} on {target_val}: {e}")
                     continue
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for res in results:
+                if not isinstance(res, list):
+                    logger.error(f"[x] {target_val}: {res}")
+                    continue
                 # Gather usernames / emails / fullnames
                 update_identity_from_results(self.identity, res)
                 # Extend artifacts and url to scrap
@@ -104,7 +151,7 @@ class Orchestrator:
             urls = list(set(self.identity.discovered_urls))
             # TODO : Order by pertinence (similarities with default identity ?)
             shuffle(urls)
-            ratio_browser = len(urls) * 0.33
+            ratio_browser = len(urls) * 0.5
 
             if i > 3:
                 urls = urls[: int(ratio_browser)]
@@ -122,7 +169,12 @@ class Orchestrator:
                     chunk_results = []
                     for url in chunk:
                         try:
-                            res = await browser.run(url, proxy=proxy)
+                            res = await self._run_with_semaphore(
+                                "browser",
+                                browser,
+                                url,
+                                proxies=[proxy] if proxy else None,
+                            )
                             chunk_results.extend(res)
                         except Exception as e:
                             logger.error(
@@ -144,7 +196,7 @@ class Orchestrator:
             else:
                 for url in urls:
                     try:
-                        res = await browser.run(url)
+                        res = await self._run_with_semaphore("browser", browser, url)
                         self.identity.raw_artifacts.extend(res)
                     except Exception as e:
                         logger.error(f"Error on Browsing {url} : {e}")
@@ -157,7 +209,7 @@ class Orchestrator:
 
         await self._update_working_proxies()
         # 3. Browser again but now search specifics usernames for additional informations
-        usernames = list(set(self.identity.username))
+        usernames = list(set([a.value for a in self.identity.username]))
         if self.working_proxies:
             # Parallelize across proxies: sequential per proxy
             num_proxies = len(self.working_proxies)
@@ -171,7 +223,9 @@ class Orchestrator:
                 chunk_results = []
                 for user in chunk:
                     try:
-                        res = await browser.run(user, proxy=proxy)
+                        res = await self._run_with_semaphore(
+                            "browser", browser, user, proxies=[proxy] if proxy else None
+                        )
                         chunk_results.extend(res)
                     except Exception as e:
                         logger.error(
@@ -193,7 +247,7 @@ class Orchestrator:
         else:
             for username in usernames:
                 try:
-                    res = await browser.run(username)
+                    res = await self._run_with_semaphore("browser", browser, username)
                     self.identity.raw_artifacts.extend(res)
                 except Exception as e:
                     logger.error(f"Error on Browsing user {username} : {e}")

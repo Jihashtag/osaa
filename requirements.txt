@@ -11,6 +11,9 @@ webdriver-manager
 # Orchestration
 pydantic
 python-dotenv
+rapidfuzz>=3.3.1
+pyyaml
+networkx
 #holele
 bs4
 termcolor

@@ -18,6 +18,7 @@ from selenium_stealth import stealth
 from selenium.webdriver.common.by import By
 
 from connectors.base import BaseConnector, DiscoveryResult
+from utils.scraper import handle_captcha
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -105,14 +106,7 @@ class BrowserConnector(BaseConnector):
 
     def _handle_captcha(self, driver: webdriver.Chrome):
         """If a captcha is detected, try clicking submit buttons."""
-        try:
-            submits = driver.find_elements(By.XPATH, "//input[@type='submit']")
-            for submit in submits:
-                logger.info()
-                submit.click()
-                sleep(random.uniform(2, 4))
-        except Exception as e:
-            logger.error(f"[x] Browser - Error handling captcha: {e}")
+        handle_captcha(driver)
 
     def _content_checker(self, driver: webdriver.Chrome) -> tuple | None:
         try:
@@ -266,7 +260,6 @@ class BrowserConnector(BaseConnector):
             return [
                 DiscoveryResult("browser", "url", target_url, {"raw_path": raw_path})
             ]
-        except Exception as e:
             if driver:
                 driver.close()
             logger.error(f"[x] Browser - {target_url} : {e}")

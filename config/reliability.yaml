@@ -1,0 +1,7 @@
+# Source Reliability Weights (0.0 to 1.0)
+holehe: 0.95
+tookie: 0.85
+holmes: 0.80
+searcher: 0.55
+browser: 0.70
+tor: 0.65

@@ -202,7 +202,8 @@ class HolmesConnector(BaseConnector):
                 f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt"
             ):
                 with open(
-                    f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt", "r"
+                    f"{self.holmes_dir}/GUI/Reports/People/Dorks/{target_slug}_Dorks.txt",
+                    "r",
                 ) as f:
                     ret = f.readlines()
                     for line in ret:

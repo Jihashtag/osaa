@@ -26,21 +26,31 @@ class IdentityCluster:
 
 
 @dataclass
+class IdentityAnchor:
+    """
+    Represents a core identity artifact with associated confidence.
+    """
+
+    value: str
+    aggregate_confidence: float = 1.0
+
+
+@dataclass
 class MasterIdentity:
     """
     The central unified data structure representing the investigated subject.
     Contains all collected artifacts and potential identity anchors.
 
     Attributes:
-        email (List[str]): Discovered email addresses.
-        username (List[str]): Discovered usernames.
+        email (List[IdentityAnchor]): Discovered email addresses.
+        username (List[IdentityAnchor]): Discovered usernames.
         fullname (List[str]): Potential full names identified.
         discovered_urls (List[str]): External links associated with the subject.
         raw_artifacts (List[Dict[str, Any]]): Unprocessed data points collected by tools.
     """
 
-    email: List[str] = field(default_factory=list)
-    username: List[str] = field(default_factory=list)
+    email: List[IdentityAnchor] = field(default_factory=list)
+    username: List[IdentityAnchor] = field(default_factory=list)
     fullname: List[str] = field(default_factory=list)
     discovered_urls: List[str] = field(default_factory=list)
     raw_artifacts: List[Dict[str, Any]] = field(default_factory=list)
