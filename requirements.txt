@@ -1,19 +1,28 @@
 # Core requirements
-requests
-beautifulsoup4
-lxml
-phonenumbers
-pdfkit
-colorama
 argparse
+beautifulsoup4
+certifi
+colorama
+ddgs
+lxml
+networkx
+pdfkit
+phonenumbers
+pydantic
+pytest
+python-dotenv
+requests
+rsa
 selenium
+selenium-stealth
+undetected-chromedriver>=3.5.5
 webdriver-manager
 # Orchestration
+networkx
 pydantic
 python-dotenv
-rapidfuzz>=3.3.1
 pyyaml
-networkx
+rapidfuzz>=3.3.1
 #holele
 bs4
 termcolor
