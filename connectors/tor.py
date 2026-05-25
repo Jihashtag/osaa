@@ -53,7 +53,7 @@ class TorConnector(BaseConnector):
         options.add_argument("--proxy-server=socks5://127.0.0.1:9050")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
-        driver = uc.Chrome(options=options, version_main=147)
+        driver = uc.Chrome(options=options)
         stealth(
             driver,
             languages=["en-US", "en"],
@@ -67,13 +67,13 @@ class TorConnector(BaseConnector):
         """If a captcha is detected, try clicking submit buttons."""
         handle_captcha(driver)
 
-    def _search_engine_discovery(self, driver: webdriver.Chrome) -> List[str]:
+    async def _search_engine_discovery(self, driver: webdriver.Chrome) -> List[str]:
         """Finds onion search engines from onion.live."""
         engines = []
         for discovery_link in ENGINE_LINKS:
             try:
                 driver.get(discovery_link)
-                sleep(random.uniform(1, 3))
+                await asyncio.sleep(random.uniform(1, 3))
                 # Extract links that look like onion links or go to search engine pages
                 links = driver.find_elements(By.TAG_NAME, "span")
                 for link in links:
@@ -113,14 +113,14 @@ class TorConnector(BaseConnector):
                 return
 
             # Step 1: Discovery from onion.live
-            engines = self._search_engine_discovery(driver)
+            engines = await self._search_engine_discovery(driver)
 
             # Step 2: Search on each engine
             for engine_url in engines[:3]:  # Limit to first 3 to avoid infinite loop
                 try:
                     logger.info(f"[*] Tor - Searching on {engine_url}")
                     driver.get(engine_url)
-                    sleep(random.uniform(2, 3))
+                    await asyncio.sleep(random.uniform(2, 3))
 
                     # Try to find search input
                     inputs = driver.find_elements(By.TAG_NAME, "input")
@@ -142,7 +142,7 @@ class TorConnector(BaseConnector):
                         # try with most common format
                         driver.get(f"{engine_url}/search?q={target}")
 
-                    sleep(random.uniform(1, 3))
+                    await asyncio.sleep(random.uniform(1, 3))
                     # Handle captcha if needed
                     self._handle_captcha(driver)
 
@@ -173,7 +173,7 @@ class TorConnector(BaseConnector):
 
                     # Navigate back using driver.back()
                     driver.back()
-                    sleep(random.uniform(2, 4))
+                    await asyncio.sleep(random.uniform(2, 4))
                 except Exception as e:
                     logger.error(f"[x] Tor - Error searching on {engine_url}: {e}")
                     continue
@@ -187,7 +187,7 @@ class TorConnector(BaseConnector):
                     url = engine + target
                     logger.info(f"[*] Tor - Searching on {url}")
                     driver.get(url)
-                    sleep(random.uniform(1, 3))
+                    await asyncio.sleep(random.uniform(1, 3))
                     self._handle_captcha(driver)
 
                     content = driver.find_element(By.TAG_NAME, "body").text
@@ -214,14 +214,13 @@ class TorConnector(BaseConnector):
                     logger.error(f"[x] Tor - Error searching on {engine}: {e}")
                     continue
 
-            if driver:
-                driver.close()
             return results
         except Exception as e:
-            if driver:
-                driver.close()
             logger.error(f"[x] Tor - Major error: {e}")
             return results
         finally:
             if driver:
-                driver.quit()
+                try:
+                    driver.quit()
+                except:
+                    pass

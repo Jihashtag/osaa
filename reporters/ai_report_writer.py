@@ -10,8 +10,11 @@ class AIReportWriter:
     def __init__(self, analyst):
         self.analyst = analyst
         self.potential_identities = {}
+        self.knowledge = None
 
-    def _sanitize_artifacts(self, artifacts: List[Any]) -> List[Dict[str, Any]]:
+    async def _sanitize_artifacts(
+        self, artifacts: List[Any], knowledge: Any = None
+    ) -> List[Dict[str, Any]]:
         sanitized = []
         for item in artifacts:
             metadata = item.metadata if hasattr(item, "metadata") else {}
@@ -22,7 +25,7 @@ class AIReportWriter:
                 else getattr(item, "value", "")
             )
 
-            res = self.analyst.analyze(
+            res = await self.analyst.analyze(
                 f"""\n\nAnalyze and extract from the following data every elements / data / informations related to {self.potential_identities} and determine if they are most likely the same or a different person:
 If the data is not sufficent and ONLY if it is not sufficent, return a JSON key "error" explaining the reason.
 Answer example:
@@ -47,7 +50,8 @@ Source:
     "value": "{str(item_val)}",
 }}
 </data>
-"""
+""",
+                knowledge=knowledge,
             )
             if isinstance(res, dict) and "error" not in res:
                 sanitized.append(res)
@@ -55,11 +59,13 @@ Source:
                 logger.info(f"[x] Artifact extraction invalid: {res}")
         return sanitized
 
-    def _generate_section(self, section_name: str, prompt: str) -> str:
+    async def _generate_section(
+        self, section_name: str, prompt: str, knowledge: Any = None
+    ) -> str:
         normalized_key = section_name.lower().replace(" ", "_")
         try:
             full_prompt = f"{prompt}\n\nINSTRUCTIONS: Clearly separate verified facts from analytical assumptions. Ensure we mention the sources when available.\n**Return a JSON with ONLY the key '{normalized_key}'**."
-            response = self.analyst.analyze(full_prompt)
+            response = await self.analyst.analyze(full_prompt, knowledge=knowledge)
             if isinstance(response, dict) and normalized_key in response:
                 return response[normalized_key]
             if isinstance(response, dict) and response:
@@ -101,21 +107,29 @@ Source:
             table += f"| {source} | {ttype} | {val[:30]} | {raw} |\n"
         return table
 
-    def generate_report(self, target: str, identity: Any) -> str:
+    async def generate_report(
+        self, target: str, identity: Any, knowledge: Any = None
+    ) -> str:
+        self.knowledge = knowledge
         self.potential_identities = {
             "usernames": list(set(un.value for un in identity.username if un)),
             "fullname": list(set(fn for fn in identity.fullname if fn)),
             "email": list(set(mail.value for mail in identity.email if mail)),
         }
-        sanitized_artifacts = self._sanitize_artifacts(identity.raw_artifacts)
+        sanitized_artifacts = await self._sanitize_artifacts(
+            identity.raw_artifacts, knowledge=knowledge
+        )
         evidence_table = self._generate_evidence_table(identity.raw_artifacts)
 
-        summary = self._generate_section(
+        summary = await self._generate_section(
             "Summary",
             f"{target} informations to summarize: {sanitized_artifacts}.",
+            knowledge=knowledge,
         )
-        profiling_data = self._generate_section(
-            "Profiling", f"Create profile for {target} based on: {sanitized_artifacts}."
+        profiling_data = await self._generate_section(
+            "Profiling",
+            f"Create profile for {target} based on: {sanitized_artifacts}.",
+            knowledge=knowledge,
         )
 
         identities_md = f"### Identified Usernames: {', '.join(self.potential_identities['usernames'])}\n### Identified Full Names: {', '.join(self.potential_identities['fullname'])}\n### Identified Emails: {', '.join(self.potential_identities['email'])}"

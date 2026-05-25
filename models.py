@@ -5,7 +5,9 @@ Defines the core data structures used by the osaaator to represent
 investigated subjects and clustered identity data.
 """
 
-from dataclasses import dataclass, field
+import json
+import re
+from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any
 
 
@@ -54,3 +56,43 @@ class MasterIdentity:
     fullname: List[str] = field(default_factory=list)
     discovered_urls: List[str] = field(default_factory=list)
     raw_artifacts: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class Knowledge:
+    """
+    Type-safe knowledge base for the profiling engine.
+
+    Attributes:
+        identity (Dict[str, Any]): Core identity attributes (e.g., email, fullname).
+        behavioral_tags (List[str]): List of identified behavioral patterns.
+        metadata (Dict[str, Any]): Additional context and source information.
+    """
+
+    identity: Dict[str, Any]
+    behavioral_tags: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts the knowledge instance to a dictionary representation.
+        """
+        return asdict(self)
+
+    def to_json_string(self) -> str:
+        """
+        Serializes the knowledge instance to a JSON string.
+        """
+        return json.dumps(self.to_dict())
+
+    def validate(self) -> None:
+        """
+        Validates the knowledge attributes.
+        Raises:
+            ValueError: If identity contains an invalid email format.
+        """
+        email = self.identity.get("email")
+        if email:
+            # Simple regex for email validation
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                raise ValueError(f"Invalid email format: {email}")

@@ -25,6 +25,8 @@ class TookieConnector(BaseConnector):
         return ["username", "fullname", "email"]
 
     async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
+        import asyncio
+
         cmd = [
             "python3",
             "brib.py",
@@ -39,7 +41,17 @@ class TookieConnector(BaseConnector):
         ]
 
         try:
-            subprocess.run(cmd, cwd=self.tookie_dir, capture_output=True, text=True)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    cwd=self.tookie_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                ),
+            )
             output_file = os.path.join(self.tookie_dir, f"{target}.json")
             if os.path.exists(output_file):
                 with open(output_file, "r") as fd:

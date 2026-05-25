@@ -15,14 +15,14 @@ from connectors.holehe import HoleheConnector
 from connectors.holmes import HolmesConnector
 from connectors.breach import BreachConnector
 from identity_utils import update_identity_from_results
-from models import MasterIdentity
+from models import MasterIdentity, Knowledge
 from proxy_utils import check_proxy
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 
 class Orchestrator:
-    def __init__(self, proxies: List[str] = None):
+    def __init__(self, proxies: List[str] = None, knowledge: Knowledge = None):
         self.connectors = {
             "browser": BrowserConnector(),
             "tor": TorConnector(),
@@ -33,6 +33,7 @@ class Orchestrator:
             "breach": BreachConnector(),
         }
         self.identity = MasterIdentity()
+        self.knowledge = knowledge
         self.proxies = proxies or []
         self.working_proxies = []
         self.semaphore = asyncio.Semaphore(5)
@@ -91,7 +92,11 @@ class Orchestrator:
         self.working_proxies = [p for p, is_up in zip(self.proxies, results) if is_up]
         logger.info(f"[*] {len(self.working_proxies)} working proxies found.")
 
-    async def run_full_pipeline(self, targets: List[Dict[str, str]]):
+    async def run_full_pipeline(
+        self, targets: List[Dict[str, str]], knowledge: Knowledge = None
+    ):
+        if knowledge:
+            self.knowledge = knowledge
         self.connectors["browser"].set_targets(targets)
         browser = self.connectors["browser"]
         i = 0

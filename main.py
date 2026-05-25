@@ -11,6 +11,7 @@ from reporters.ai_report_writer import AIReportWriter
 from proxy_utils import load_proxies
 from random import shuffle
 from models import IdentityAnchor
+from knowledge_loader import KnowledgeLoader
 
 
 async def main():
@@ -34,6 +35,9 @@ async def main():
     parser.add_argument(
         "--dry-run", action="store_true", help="Print execution plan without running"
     )
+    parser.add_argument(
+        "--knowledge-file", help="Path to a JSON file containing certified knowledge"
+    )
 
     args = parser.parse_args()
 
@@ -54,6 +58,16 @@ async def main():
     if args.proxy_list:
         proxies = load_proxies(args.proxy_list)
 
+    # Initialize knowledge from CLI args or file
+    knowledge = None
+    if args.knowledge_file:
+        knowledge = KnowledgeLoader.from_json(args.knowledge_file)
+    else:
+        # Fallback to CLI basic knowledge
+        knowledge = KnowledgeLoader.from_dict(
+            {"username": args.username, "fullname": args.name, "email": args.email}
+        )
+
     target = {"username": args.username, "fullname": args.name, "email": args.email}
     target_id = args.username or args.name or args.email
 
@@ -70,7 +84,7 @@ async def main():
     )
     shuffle(additional_targets)
 
-    orchestrator = Orchestrator(proxies=proxies)
+    orchestrator = Orchestrator(proxies=proxies, knowledge=knowledge)
 
     for key, val in target.items():
         if not val:
@@ -91,7 +105,9 @@ async def main():
     analyst = AIAnalyst(agent_type=args.ai_agent, model_name=args.model)
     writer = AIReportWriter(analyst)
 
-    final_md = writer.generate_report(target_id, orchestrator.identity)
+    final_md = await writer.generate_report(
+        target_id, orchestrator.identity, knowledge=knowledge
+    )
 
     report_path = os.path.join(output_dir, "Report.md")
     with open(report_path, "x", encoding="utf-8") as f:

@@ -27,7 +27,7 @@ class HoleheConnector(BaseConnector):
 
     async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         # Holehe uses a docker container.
-        cmd = ["holele", target, "--no-color"]
+        cmd = ["holehe", target, "--no-color"]
 
         # Using run_in_executor to keep the loop non-blocking
         import asyncio

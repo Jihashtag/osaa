@@ -70,8 +70,9 @@ async def test_searcher_multi_proxy(mock_ddgs):
 
 
 @pytest.mark.asyncio
+@patch("connectors.browser.stealth")
 @patch("connectors.browser.uc.Chrome")
-async def test_browser_proxy(mock_chrome):
+async def test_browser_proxy(mock_chrome, mock_stealth):
     browser = BrowserConnector()
     # Mock driver
     mock_driver = MagicMock()

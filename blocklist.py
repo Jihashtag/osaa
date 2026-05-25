@@ -30,12 +30,16 @@ def is_local_noise(value: str) -> bool:
     Returns:
         bool: True if the artifact is considered noise/local file, False otherwise.
     """
-    # Check if any blacklisted project keywords are present in the value
-    if any(item in value.lower() for item in BLOCKLIST):
+    # Use exact matching or word-based matching for blocklist to avoid partial hits on valid names
+    val_lower = value.lower()
+
+    # Check for exact matches in blocklist (common noise)
+    if val_lower in BLOCKLIST:
         return True
 
-    # Check if the value resolves to an existing file/directory path
-    if os.path.exists(value):
+    # Check for common local path markers (more specific)
+    path_markers = {".py", ".pyc", "__pycache__", "node_modules", ".git/"}
+    if any(marker in val_lower for marker in path_markers):
         return True
 
     return False

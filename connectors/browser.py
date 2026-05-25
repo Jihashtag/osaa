@@ -81,7 +81,6 @@ class BrowserConnector(BaseConnector):
             options=options,
             # user_data_dir="cookie_folder",
             keep_alive=False,
-            version_main=147,
         )
         stealth(
             driver,
@@ -191,13 +190,13 @@ class BrowserConnector(BaseConnector):
                 except:
                     pass
 
-    def _navigate(self, driver):
+    async def _navigate(self, driver):
         try:
             button = driver.find_elements(By.TAG_NAME, "button")
             for x in button:
                 if "allow" in x.text.lower() or "accepter" in x.text.lower():
                     x.click()
-                    sleep(random.uniform(3, 5))
+                    await asyncio.sleep(random.uniform(3, 5))
         except:
             # If there are multiple one or none it might go wild
             pass
@@ -206,7 +205,7 @@ class BrowserConnector(BaseConnector):
             for x in a:
                 if "allow" in x.text.lower() or "accepter" in x.text.lower():
                     x.click()
-                    sleep(random.uniform(1, 2))
+                    await asyncio.sleep(random.uniform(1, 2))
                     return
         except:
             # If there are none it might go wild
@@ -217,7 +216,7 @@ class BrowserConnector(BaseConnector):
             for x in range(0, len_click):
                 buttons = driver.find_elements(By.TAG_NAME, "button")
                 button[x].click()
-                sleep(random.uniform(0, 2))
+                await asyncio.sleep(random.uniform(0, 2))
         except:
             # We propably clicked already
             pass
@@ -235,11 +234,11 @@ class BrowserConnector(BaseConnector):
             driver = self._setup_driver(proxy=proxy)
             if not driver:
                 logger.error("[x] Browser could not init driver")
-                return
+                return []
             driver.get(target_url)
-            sleep(random.uniform(3, 5))
+            await asyncio.sleep(random.uniform(3, 5))
 
-            self._navigate(driver)
+            await self._navigate(driver)
 
             perfLog = driver.get_log("performance")
             if not response_checker(perfLog):
@@ -255,15 +254,17 @@ class BrowserConnector(BaseConnector):
             with open(raw_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            driver.close()
             logger.info(f"[✓] Browser - {target_url}")
             return [
                 DiscoveryResult("browser", "url", target_url, {"raw_path": raw_path})
             ]
-            if driver:
-                driver.close()
+        except Exception as e:
             logger.error(f"[x] Browser - {target_url} : {e}")
             return []
         finally:
             if driver:
-                driver.quit()
+                try:
+                    driver.close()
+                    driver.quit()
+                except:
+                    pass

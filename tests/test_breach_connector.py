@@ -11,14 +11,12 @@ class TestBreachConnector(unittest.TestCase):
         self.assertTrue(self.connector.requires_hashing)
 
     def test_run_hit(self):
-        loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self.connector.run("test@example.com"))
+        results = asyncio.run(self.connector.run("test@example.com"))
         self.assertEqual(len(results), 1)
         self.assertIn("breach_connector", results[0].source_tool)
 
     def test_run_miss(self):
-        loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self.connector.run("unknown@example.com"))
+        results = asyncio.run(self.connector.run("unknown@example.com"))
         self.assertEqual(len(results), 0)
 
 

@@ -1,9 +1,11 @@
 import json
+import asyncio
 from logger import get_logger
 import os
 import subprocess
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from models import Knowledge
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -66,10 +68,17 @@ class AIAnalyst:
         except Exception:
             return {"error": "Failed to parse JSON", "raw_output": text}
 
-    def analyze(self, identity_data: str) -> Dict[str, Any]:
+    async def analyze(
+        self, identity_data: str, knowledge: Optional[Knowledge] = None
+    ) -> Dict[str, Any]:
         """Analyzes OSINT artifacts via selected AI agent."""
+        knowledge_context = ""
+        if knowledge:
+            knowledge_context = f"\n**CERTIFIED KNOWLEDGE (GROUND TRUTH):**\n{json.dumps(knowledge.to_dict(), indent=2)}\n"
+
         prompt = f"""
 {self.system_prompt}
+{knowledge_context}
 
 Return a strictly **valid JSON object** under "<answer>" tags.
 DO NOT USE placeholders like '<...>'. Write complete sentences.
@@ -109,15 +118,24 @@ DO NOT USE placeholders like '<...>'. Write complete sentences.
             return {"error": f"Unsupported agent type: {self.agent_type}"}
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode != 0:
-                return {"error": f"{self.agent_type} command failed: {result.stderr}"}
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
+            if process.returncode != 0:
+                return {"error": f"{self.agent_type} command failed: {stderr.decode()}"}
+
+            stdout_str = stdout.decode()
             if os.getenv("DEBUG") == "True":
                 logger.info(
-                    f"{self.agent_type.upper()} Raw Output: {result.stdout[:500]}..."
+                    f"{self.agent_type.upper()} Raw Output: {stdout_str[:500]}..."
                 )
 
-            return self._extract_json(result.stdout)
+            return self._extract_json(stdout_str)
+        except asyncio.TimeoutError:
+            return {"error": f"Analysis timed out for {self.agent_type}"}
         except Exception as e:
             return {"error": f"Analysis service unavailable: {e}"}

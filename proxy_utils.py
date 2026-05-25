@@ -1,8 +1,12 @@
+import asyncio
 import os
 import requests
+import urllib3
 
 from logger import get_logger
-from unittest.mock import patch
+
+# Suppress insecure request warnings globally
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -40,20 +44,17 @@ def check_proxy(proxy, timeout=5):
             "https": proxy,
         }
         # Using duckduckgo as it's the target for ddgs anyway
-        with patch("urllib3.connectionpool.warnings.warn", return_value=None):
-            response = requests.get(
-                "https://duckduckgo.com", proxies=proxies, timeout=timeout, verify=False
-            )
-            return response.status_code == 200
+        response = requests.get(
+            "https://duckduckgo.com", proxies=proxies, timeout=timeout, verify=False
+        )
+        return response.status_code == 200
     except Exception as e:
         logger.info(f"Error in {proxy} check: {e}")
         return False
 
 
 async def get_working_proxies(proxies):
-    """Filters working proxies. In a real scenario, this could be async but requests is sync."""
-    working = []
-    for proxy in proxies:
-        if check_proxy(proxy):
-            working.append(proxy)
-    return working
+    """Filters working proxies using parallel threads."""
+    tasks = [asyncio.to_thread(check_proxy, p) for p in proxies]
+    results = await asyncio.gather(*tasks)
+    return [p for p, is_up in zip(proxies, results) if is_up]

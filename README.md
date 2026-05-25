@@ -9,8 +9,10 @@ The `osaa` tool is a recursive, modular OSINT fusion engine designed for local i
     - **`HoleheConnector`**: Wraps the Holehe email OSINT tool, parsing structured JSON output.
     - **`HolmesConnector`**: Interfaces with the `python_holmes` framework via library imports.
     - **`TookieConnector`**: Executes the Tookie-OSINT CLI and handles output redirection.
-- **`FusionEngine`**: Analyzes raw discovery data and maps tool-specific outputs to the `MasterIdentity` model.
-- **`LLMAnalyst`**: Provides local AI inference by auto-detecting `gemini` CLI or falling back to `Ollama`.
+    - **`TorConnector` & `BrowserConnector`**: Support for deep web scraping and headless browser automation.
+- **`FusionEngine`**: Probabilistic Identity Fusion Engine (`osaa/fusion_engine.py`). Implements similarity-based linking using `rapidfuzz` and source reliability weighting.
+- **`KnowledgeSystem`**: Certified Truth base (`osaa/knowledge_loader.py`). Anchors LLM analysis to verified target data to prevent hallucinations.
+- **`AIAnalyst`**: Provides local AI inference by auto-detecting `gemini` CLI, `LM Studio`, or `Ollama`.
 - **`MasterIdentity`**: The unified data structure representing the investigated subject.
 
 ## Installation & Setup
