@@ -22,7 +22,7 @@ logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 
 class Orchestrator:
-    def __init__(self, proxies: List[str] = None, knowledge: Knowledge = None):
+    def __init__(self, proxies: List[str] = None, knowledge: Knowledge = None, ratio: float = 0.33):
         self.connectors = {
             "browser": BrowserConnector(),
             "tor": TorConnector(),
@@ -33,6 +33,7 @@ class Orchestrator:
             "breach": BreachConnector(),
         }
         self.identity = MasterIdentity()
+        self.ratio = ratio
         self.knowledge = knowledge
         self.proxies = proxies or []
         self.working_proxies = []
@@ -102,7 +103,7 @@ class Orchestrator:
         i = 0
         len_target = len(targets)
         # Ensure we process at least the first targets if the list is small
-        ratio = max(3, int(len_target * 0.33))
+        ratio = max(3, int(len_target * self.ratio))
 
         for target in targets:
             i += 1
@@ -156,7 +157,7 @@ class Orchestrator:
             urls = list(set(self.identity.discovered_urls))
             # TODO : Order by pertinence (similarities with default identity ?)
             shuffle(urls)
-            ratio_browser = len(urls) * 0.5
+            ratio_browser = len(urls) * self.ratio
 
             if i > 3:
                 urls = urls[: int(ratio_browser)]

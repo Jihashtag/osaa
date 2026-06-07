@@ -21,6 +21,7 @@ async def main():
     parser.add_argument("--username", help="Target known username")
     parser.add_argument("--name", help="Target known full name")
     parser.add_argument("--email", help="Target known email")
+    parser.add_argument("--ratio", help="Ratio (default 0.33)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logs")
     parser.add_argument(
         "--ai-agent",
@@ -84,7 +85,8 @@ async def main():
     )
     shuffle(additional_targets)
 
-    orchestrator = Orchestrator(proxies=proxies, knowledge=knowledge)
+    ratio = float(args.ratio or 0.33)
+    orchestrator = Orchestrator(proxies=proxies, knowledge=knowledge, ratio=ratio)
 
     for key, val in target.items():
         if not val:

@@ -1,6 +1,6 @@
 import json
 from typing import Dict, Any
-from osaa.models import Knowledge
+from models import Knowledge
 
 
 class KnowledgeLoader:

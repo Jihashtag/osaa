@@ -3,6 +3,7 @@
 echo "Cloning and preparing OSINT toolkit..."
 
 # 1. Clone projects
+# Replace with your prefered git repo
 git clone https://github.com/holehe-osint/holehe ../holehe
 git clone https://github.com/Mr-Holmes-OSINT/MrHolmes ../python_holmes
 git clone https://github.com/killswitch-GUI/Tookie-OSINT ../python_toolkie

@@ -1,5 +1,5 @@
 from typing import Optional
-from osaa.ai_analyst import AIAnalyst
+from ai_analyst import AIAnalyst
 
 
 class KnowledgeSummarizer:
