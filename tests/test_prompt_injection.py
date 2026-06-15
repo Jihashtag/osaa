@@ -1,8 +1,8 @@
 import unittest
 import asyncio
 from unittest.mock import patch, AsyncMock
-from osaa.ai_analyst import AIAnalyst
-from osaa.models import Knowledge
+from ai_analyst import AIAnalyst
+from models import Knowledge
 
 
 class TestPromptInjection(unittest.TestCase):

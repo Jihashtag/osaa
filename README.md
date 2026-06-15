@@ -40,18 +40,30 @@ await orch.run_full_pipeline(targets)
 
 ### CLI Execution
 ```bash
-python3 -m osaa.main --user target_user
+python3 main.py --username target_user
 ```
+Other flags: `--name`, `--email`, `--ratio`, `--proxy_list`, `--knowledge-file`,
+`--ai-agent {lms,ollama,gemini}`, `--model`, `--debug`, `--dry-run`.
 
 ## Testing
 
-The project uses `unittest`. Tests are located in the `osaa/` directory.
+The project runs its tests with **pytest** (`pytest-asyncio` for the async
+suite). Tests live both at the top level (`test_*.py`) and under `tests/`. A
+`conftest.py` puts the package directory on `sys.path`, and `pytest.ini`
+configures discovery and markers, so a bare invocation works from the project
+directory:
 
 ### Running Tests
-Execute the following to run the full test suite:
 ```bash
-PYTHONPATH=. python3 -m unittest discover osaa/ -p 'test_*.py'
+# Full offline suite (live-network tests are deselected by default):
+python3 -m pytest
+
+# Include the tests that hit the live internet (DuckDuckGo, proxies, Tor):
+python3 -m pytest -m network
 ```
+Tests that require network access are tagged with `@pytest.mark.network` and are
+skipped by default to keep the suite fast and deterministic (this is also what
+CI runs).
 
 ### Adding New Tools
 To add a new tool, inherit from `BaseConnector` in `osaa/connectors/` and implement the `run` method to return a list of `DiscoveryResult` objects.

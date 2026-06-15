@@ -1,9 +1,11 @@
 import unittest
+import pytest
 from connectors.searcher import SearchConnector
 from profiles import Profiles
 import asyncio
 
 
+@pytest.mark.network
 class TestSearchConnector(unittest.IsolatedAsyncioTestCase):
     async def test_search(self):
         connector = SearchConnector()

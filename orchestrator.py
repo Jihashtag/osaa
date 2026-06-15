@@ -1,6 +1,7 @@
 import gc
 import os
 import asyncio
+import time
 from datetime import datetime
 
 from logger import get_logger
@@ -39,6 +40,11 @@ class Orchestrator:
         self.working_proxies = []
         self.semaphore = asyncio.Semaphore(5)
         self.execution_log = []
+        # Proxy validation is expensive (one network round-trip per proxy) and
+        # was previously repeated on every dispatch. Cache the result and only
+        # re-validate after this TTL elapses.
+        self._proxy_check_ttl = 300  # seconds
+        self._proxy_last_checked = 0.0
 
     async def _run_with_semaphore(
         self, name: str, connector, target: str, proxies: List[str] = None, **kwargs
@@ -77,10 +83,19 @@ class Orchestrator:
                 logger.error(f"[x] {name} on {target}: {e}")
                 return []
 
-    async def _update_working_proxies(self):
-        """Checks which proxies are up."""
+    async def _update_working_proxies(self, force: bool = False):
+        """Checks which proxies are up, caching the result for a TTL window."""
         if not self.proxies:
             self.working_proxies = []
+            return
+
+        now = time.monotonic()
+        if (
+            not force
+            and self.working_proxies
+            and (now - self._proxy_last_checked) < self._proxy_check_ttl
+        ):
+            # Recent successful check still valid; skip the network round-trips.
             return
 
         logger.info(f"[*] Checking {len(self.proxies)} proxies...")
@@ -91,6 +106,7 @@ class Orchestrator:
 
         results = await asyncio.gather(*checks)
         self.working_proxies = [p for p, is_up in zip(self.proxies, results) if is_up]
+        self._proxy_last_checked = time.monotonic()
         logger.info(f"[*] {len(self.working_proxies)} working proxies found.")
 
     async def run_full_pipeline(

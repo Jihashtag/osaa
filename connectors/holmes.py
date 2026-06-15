@@ -49,16 +49,27 @@ class HolmesConnector(BaseConnector):
         else:
             self.holmes_dir = holmes_dir
         sys.path.append(self.holmes_dir)
-        self._filter_proxies()
+        # Proxy filtering performs network I/O, so it must NOT run in the
+        # constructor (that blocked/leaked on every Orchestrator() and made the
+        # whole test suite hit the live internet). It is done lazily, once, on
+        # the first run() call where we are guaranteed an async context.
+        self._proxies_filtered = False
 
-    def _filter_proxies(self):
+    async def _filter_proxies(self):
+        """Validates the holmes proxy pool and writes the working subset.
+
+        Runs once; subsequent calls are no-ops. Safe to await from run()."""
+        if self._proxies_filtered:
+            return
+        self._proxies_filtered = True
+
         proxy_all = os.path.join(self.holmes_dir, "Proxies", "Proxy_list_all.txt")
         proxy_out = os.path.join(self.holmes_dir, "Proxies", "Proxy_list.txt")
 
         if not os.path.exists(proxy_all):
             return
 
-        async def run_filtering():
+        try:
             with open(proxy_all, "r") as f:
                 proxies = [line.strip() for line in f if line.strip()]
 
@@ -70,15 +81,8 @@ class HolmesConnector(BaseConnector):
             with open(proxy_out, "w") as f:
                 for p in working:
                     f.write(f"{p}\n")
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(run_filtering())
-            else:
-                loop.run_until_complete(run_filtering())
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"[x] holmes proxy filtering failed: {e}")
 
     @property
     def supported_types(self) -> List[str]:
@@ -208,8 +212,14 @@ class HolmesConnector(BaseConnector):
                     ret = f.readlines()
                     for line in ret:
                         if line.startswith("| http"):
+                            # Strip the "| " table prefix to recover the URL.
+                            # The URL is the result *value*; the originating
+                            # target goes in metadata for traceability.
+                            url = line[2:].strip()
                             results.append(
-                                DiscoveryResult("holmes", "url", target, line["2:"])
+                                DiscoveryResult(
+                                    "holmes", "url", url, {"query": target}
+                                )
                             )
             else:
                 logger.info(f"[!] holmes: {target_slug}: Dorks not found")
@@ -223,6 +233,7 @@ class HolmesConnector(BaseConnector):
 
     async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         loop = asyncio.get_running_loop()
+        await self._filter_proxies()
 
         try:
             if "@" in target:

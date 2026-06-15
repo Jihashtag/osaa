@@ -37,9 +37,16 @@ def is_local_noise(value: str) -> bool:
     if val_lower in BLOCKLIST:
         return True
 
-    # Check for common local path markers (more specific)
-    path_markers = {".py", ".pyc", "__pycache__", "node_modules", ".git/"}
-    if any(marker in val_lower for marker in path_markers):
+    # Source-file artifacts: match only when the value *ends* with a code
+    # extension (a real filename) rather than any substring, so URLs like
+    # "blog.python.org" or "site.py.dev" are not wrongly dropped.
+    if val_lower.endswith((".py", ".pyc", ".pyo")):
+        return True
+
+    # Local directory markers, matched as path segments (with separators) to
+    # avoid clobbering legitimate identifiers that merely contain the word.
+    segment_markers = ("__pycache__", "node_modules", "/.git/", "/.git")
+    if any(marker in val_lower for marker in segment_markers):
         return True
 
     return False

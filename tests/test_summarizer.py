@@ -1,7 +1,7 @@
 import unittest
 import asyncio
 from unittest.mock import MagicMock
-from osaa.knowledge_summarizer import KnowledgeSummarizer
+from knowledge_summarizer import KnowledgeSummarizer
 
 
 class TestKnowledgeSummarizer(unittest.TestCase):

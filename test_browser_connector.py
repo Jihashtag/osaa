@@ -1,17 +1,18 @@
 import pytest
 import logging
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from connectors.browser import BrowserConnector
 
 logging.basicConfig(level=logging.DEBUG)
 
 
 @pytest.mark.asyncio
+@patch("connectors.browser.asyncio.sleep", new_callable=AsyncMock)
 @patch("connectors.browser.get_report_dir", return_value="/tmp/osaa_test")
 @patch("connectors.browser.uc.Chrome")
 @patch("connectors.browser.stealth")
-async def test(mock_stealth, mock_chrome, mock_report_dir):
+async def test(mock_stealth, mock_chrome, mock_report_dir, mock_sleep):
     # Mock driver
     mock_driver = MagicMock()
     mock_chrome.return_value = mock_driver

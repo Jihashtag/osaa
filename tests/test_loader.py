@@ -1,8 +1,8 @@
 import unittest
 import json
 import os
-from osaa.knowledge_loader import KnowledgeLoader
-from osaa.models import Knowledge
+from knowledge_loader import KnowledgeLoader
+from models import Knowledge
 
 
 class TestKnowledgeLoader(unittest.TestCase):

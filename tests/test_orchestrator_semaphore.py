@@ -1,87 +1,71 @@
-import unittest
+"""Behavioral tests for the Orchestrator's concurrency control and run log.
+
+These replace earlier tests that merely grepped ``orchestrator.py`` for the
+presence of strings (which passed even if the semaphore was never honoured).
+"""
+
 import asyncio
+import unittest
+
+from orchestrator import Orchestrator
 
 
-class TestOrchestratorAttributes(unittest.TestCase):
-    """Tests for Orchestrator semaphore and execution log."""
+class _ConcurrencyProbe:
+    """Connector stub that records the peak number of overlapping runs."""
 
-    def test_orchestrator_has_semaphore_attribute(self):
-        """Verify Orchestrator class has semaphore attribute defined."""
-        # Read the source to verify semaphore is declared
-        import os
+    supported_types = ["email", "username"]
 
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        orch_path = os.path.join(base_dir, "orchestrator.py")
-        with open(orch_path, "r") as f:
-            content = f.read()
+    def __init__(self, tracker):
+        self.tracker = tracker
 
-        self.assertIn(
-            "self.semaphore = asyncio.Semaphore(5)",
-            content,
-            "Orchestrator should initialize semaphore with limit of 5",
-        )
-
-    def test_orchestrator_has_execution_log_attribute(self):
-        """Verify Orchestrator class has execution_log attribute defined."""
-        import os
-
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        orch_path = os.path.join(base_dir, "orchestrator.py")
-        with open(orch_path, "r") as f:
-            content = f.read()
-
-        self.assertIn(
-            "self.execution_log = []",
-            content,
-            "Orchestrator should initialize execution_log as list",
-        )
+    async def run(self, target, proxies=None, **kwargs):
+        self.tracker["current"] += 1
+        self.tracker["peak"] = max(self.tracker["peak"], self.tracker["current"])
+        try:
+            await asyncio.sleep(0.05)
+            return []
+        finally:
+            self.tracker["current"] -= 1
 
 
-class TestSemaphoreUsage(unittest.TestCase):
-    """Tests to verify semaphore is actually used in the code."""
+class TestOrchestratorSemaphore(unittest.IsolatedAsyncioTestCase):
+    async def test_concurrency_never_exceeds_limit(self):
+        orch = Orchestrator()
+        tracker = {"current": 0, "peak": 0}
+        probe = _ConcurrencyProbe(tracker)
 
-    def test_semaphore_used_in_connector_gathering(self):
-        """Verify semaphore is used to constrain concurrent connector runs."""
-        import os
+        # Launch far more tasks than the semaphore allows; peak must stay <= 5.
+        tasks = [
+            orch._run_with_semaphore("probe", probe, f"target{i}")
+            for i in range(20)
+        ]
+        await asyncio.gather(*tasks)
 
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        orch_path = os.path.join(base_dir, "orchestrator.py")
-        with open(orch_path, "r") as f:
-            content = f.read()
+        self.assertLessEqual(tracker["peak"], 5)
+        self.assertGreater(tracker["peak"], 1)  # work actually overlapped
 
-        # The semaphore should be used in asyncio.gather operations
-        # Either as a wrapper or as part of task management
-        has_semaphore_usage = "self.semaphore" in content and (
-            "async with self.semaphore" in content
-            or "await self.semaphore" in content
-            or "semaphore" in content
-        )
+    async def test_execution_log_records_success_and_error(self):
+        orch = Orchestrator()
 
-        self.assertIn(
-            "self.semaphore",
-            content,
-            "Semaphore should be referenced in orchestrator code",
-        )
+        class _Ok:
+            async def run(self, target, proxies=None, **kwargs):
+                return [1, 2, 3]
 
+        class _Boom:
+            async def run(self, target, proxies=None, **kwargs):
+                raise RuntimeError("kaboom")
 
-class TestExecutionLogUsage(unittest.TestCase):
-    """Tests to verify execution_log is properly used."""
+        ok = await orch._run_with_semaphore("ok", _Ok(), "t")
+        boom = await orch._run_with_semaphore("boom", _Boom(), "t")
 
-    def test_execution_log_used_for_logging(self):
-        """Verify execution_log is used to record connector exit codes."""
-        import os
+        self.assertEqual(ok, [1, 2, 3])
+        self.assertEqual(boom, [])  # errors are swallowed into an empty result
 
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        orch_path = os.path.join(base_dir, "orchestrator.py")
-        with open(orch_path, "r") as f:
-            content = f.read()
-
-        # execution_log should be appended with result data
-        self.assertIn(
-            "self.execution_log",
-            content,
-            "execution_log should be used in orchestrator",
-        )
+        statuses = {e["tool"]: e["status"] for e in orch.execution_log}
+        self.assertEqual(statuses["ok"], "success")
+        self.assertEqual(statuses["boom"], "error")
+        ok_entry = next(e for e in orch.execution_log if e["tool"] == "ok")
+        self.assertEqual(ok_entry["artifacts_count"], 3)
 
 
 if __name__ == "__main__":

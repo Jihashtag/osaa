@@ -1,7 +1,7 @@
 import pytest
 import os
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from proxy_utils import load_proxies, check_proxy, get_working_proxies
 from orchestrator import Orchestrator
 from connectors.searcher import SearchConnector
@@ -31,7 +31,10 @@ def test_check_proxy(mock_get):
 @pytest.mark.asyncio
 @patch("proxy_utils.check_proxy")
 async def test_get_working_proxies(mock_check):
-    mock_check.side_effect = [True, False, True]
+    # check_proxy runs concurrently across threads, so a positional
+    # side_effect list would be consumed in nondeterministic order. Map the
+    # verdict to the proxy value instead to keep the assertion stable.
+    mock_check.side_effect = lambda proxy, *a, **k: proxy in ("p1", "p3")
     proxies = ["p1", "p2", "p3"]
     working = await get_working_proxies(proxies)
     assert working == ["p1", "p3"]
@@ -47,8 +50,9 @@ async def test_orchestrator_proxy_update(mock_check):
 
 
 @pytest.mark.asyncio
+@patch("connectors.searcher.asyncio.sleep", new_callable=AsyncMock)
 @patch("connectors.searcher.DDGS")
-async def test_searcher_multi_proxy(mock_ddgs):
+async def test_searcher_multi_proxy(mock_ddgs, mock_sleep):
     # Mock DDGS results
     mock_instance = MagicMock()
     mock_instance.text.return_value = [{"href": "url1", "title": "t1", "body": "b1"}]
@@ -70,9 +74,10 @@ async def test_searcher_multi_proxy(mock_ddgs):
 
 
 @pytest.mark.asyncio
+@patch("connectors.browser.asyncio.sleep", new_callable=AsyncMock)
 @patch("connectors.browser.stealth")
 @patch("connectors.browser.uc.Chrome")
-async def test_browser_proxy(mock_chrome, mock_stealth):
+async def test_browser_proxy(mock_chrome, mock_stealth, mock_sleep):
     browser = BrowserConnector()
     # Mock driver
     mock_driver = MagicMock()

@@ -111,7 +111,7 @@ class TorConnector(BaseConnector):
             driver = self._setup_driver()
             if not driver:
                 logger.error("[x] Tor could not init driver")
-                return
+                return []
 
             # Step 1: Discovery from onion.live
             engines = await self._search_engine_discovery(driver)

@@ -1,6 +1,6 @@
 # Logic Documentation
 
-The osaaator follows a modular, extensible design pattern.
+The Orchestrator follows a modular, extensible design pattern.
 
 ## Core Logic Flow
 

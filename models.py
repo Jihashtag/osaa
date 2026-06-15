@@ -1,7 +1,7 @@
 """
 Models Module
 -------------
-Defines the core data structures used by the osaaator to represent
+Defines the core data structures used by the Orchestrator to represent
 investigated subjects and clustered identity data.
 """
 

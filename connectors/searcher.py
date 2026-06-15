@@ -2,10 +2,10 @@ import asyncio
 import os
 import random
 
-from time import sleep
 from ddgs import DDGS
 from logger import get_logger
 from connectors.base import BaseConnector, DiscoveryResult
+from blocklist import is_local_noise
 from typing import List
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
@@ -54,71 +54,98 @@ class SearchConnector(BaseConnector):
             tasks.append(self._run_dorks(chunk, proxy))
 
         results = await asyncio.gather(*tasks)
-        # Flatten results
-        return [item for sublist in results for item in sublist]
+        # Flatten then deduplicate by URL across all dorks/proxies.
+        flat = [item for sublist in results for item in sublist]
+        return self._dedupe(flat)
+
+    @staticmethod
+    def _dedupe(results: List[DiscoveryResult]) -> List[DiscoveryResult]:
+        """Collapses results sharing the same URL, keeping the highest
+        confidence sighting (tiered dorks overlap heavily)."""
+        best = {}
+        for r in results:
+            current = best.get(r.value)
+            if current is None or r.confidence > current.confidence:
+                best[r.value] = r
+        return list(best.values())
+
+    @staticmethod
+    def _build_query_kwargs(proxy: str) -> dict:
+        kwargs = {"verify": False}
+        if proxy is not None:
+            # ddgs wants a bare host:port for http proxies. Strip the scheme
+            # with removeprefix ("http://" is 7 chars; the old proxy[8:] ate
+            # the first character of the address).
+            kwargs["proxy"] = proxy.removeprefix("http://")
+        return kwargs
+
+    def _rows_to_results(
+        self, rows: list, query: str, confidence: float
+    ) -> List[DiscoveryResult]:
+        """Maps raw DDGS rows to DiscoveryResults, skipping local noise and
+        malformed rows. Uses .get() so one bad row can't abort the batch."""
+        out = []
+        for r in rows:
+            url = r.get("href")
+            if not url or is_local_noise(url):
+                continue
+            out.append(
+                DiscoveryResult(
+                    "searcher",
+                    "url",
+                    url,
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "query": query,
+                    },
+                    confidence=confidence,
+                )
+            )
+        return out
+
+    @staticmethod
+    def _ddgs_text(kwargs: dict, query: str, max_results: int) -> list:
+        """Blocking DDGS call, intended to run in a worker thread."""
+        with DDGS(**kwargs) as ddgs:
+            return list(
+                ddgs.text(query, safesearch="off", max_results=max_results)
+            )
 
     async def _run_dorks(self, dorks: List[str], proxy: str) -> List[DiscoveryResult]:
         results = []
         for query in dorks:
+            # Exact, quoted dorks are higher-signal than the unquoted fallback.
+            confidence = 0.7 if '"' in query else 0.55
             success = False
             for attempt in range(2):  # Limit attempts with same proxy
                 try:
-                    kwargs = {"verify": False}
-                    if proxy is not None:
-                        kwargs["proxy"] = proxy if "http://" not in proxy else proxy[8:]
-                    with DDGS(**kwargs) as ddgs:
-                        sleep(random.uniform(3, 5))
-                        res = list(
-                            ddgs.text(
-                                query,
-                                safesearch="off",
-                                max_results=10,
-                            )
-                        )
-                        for r in res:
-                            results.append(
-                                DiscoveryResult(
-                                    "searcher",
-                                    "url",
-                                    r["href"],
-                                    {
-                                        "title": r["title"],
-                                        "snippet": r["body"],
-                                        "query": query,
-                                    },
-                                )
-                            )
-                        if res:
-                            success = True
-                            break
-                        else:
-                            # If no error but no results, maybe query is bad?
-                            # Continue to fallback
-                            break
+                    # Jitter to avoid rate-limiting, without blocking the loop.
+                    await asyncio.sleep(random.uniform(3, 5))
+                    kwargs = self._build_query_kwargs(proxy)
+                    res = await asyncio.to_thread(self._ddgs_text, kwargs, query, 10)
+                    results.extend(self._rows_to_results(res, query, confidence))
+                    # A clean (even empty) response means no transient error;
+                    # stop retrying and let the fallback handle empties.
+                    success = bool(res)
+                    break
                 except Exception as e:
                     logger.warning(
                         f"[x] Search attempt {attempt+1} failed for {query} with proxy {proxy}: {e}"
                     )
-                    sleep(2 * (attempt + 1))
+                    await asyncio.sleep(2 * (attempt + 1))
 
             if not success:
-                # Exhaustive fallback: Search without quotes if query fails
+                # Exhaustive fallback: search without quotes if the query failed.
                 try:
                     logger.info(f"[*] Falling back to broader query for {query}")
-                    with DDGS(proxy=proxy, verify=False) as ddgs:
-                        res = list(ddgs.text(query.replace('"', ""), max_results=5))
-                        for r in res:
-                            results.append(
-                                DiscoveryResult(
-                                    "searcher",
-                                    "url",
-                                    r["href"],
-                                    {"title": r["title"], "snippet": r["body"]},
-                                )
-                            )
+                    kwargs = self._build_query_kwargs(proxy)
+                    res = await asyncio.to_thread(
+                        self._ddgs_text, kwargs, query.replace('"', ""), 5
+                    )
+                    results.extend(self._rows_to_results(res, query, 0.4))
                 except Exception as e:
                     logger.warning(
                         f"[x] Search failed for {query} with proxy {proxy}: {e}"
                     )
-                    pass
-        return results
+        return self._dedupe(results)

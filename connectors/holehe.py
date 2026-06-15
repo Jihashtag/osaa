@@ -3,7 +3,6 @@ import os
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 import subprocess
-import json
 import os
 from typing import List
 from connectors.base import BaseConnector, DiscoveryResult
@@ -33,31 +32,41 @@ class HoleheConnector(BaseConnector):
         import asyncio
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: subprocess.run(cmd, capture_output=True, text=True)
-        )
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120
+                ),
+            )
+        except FileNotFoundError:
+            logger.error("[x] holehe: binary not found on PATH")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.error(f"[x] holehe: timed out for {target}")
+            return []
 
         results = []
         try:
             output_lines = result.stdout.splitlines()
             for line in output_lines:
-                try:
-                    if not line.startswith("[+]"):
-                        continue
-                    results.append(
-                        DiscoveryResult(
-                            source_tool="holehe",
-                            target_type="email",
-                            value=f"{target} is used on : {line[4:]}",
-                            metadata={"used": True, "title": line},
-                        )
-                    )
-                    logger.info(f"[✓] holehe: {target}")
-                except json.JSONDecodeError as e:
-                    logger.info(f"[x] holehe: {target} - Error {e}")
+                # holehe emits plain text; "[+] <service>" marks a hit.
+                if not line.startswith("[+]"):
                     continue
+                service = line[4:].strip()
+                # Use target_type="account" (not "email"): the value is a
+                # service name, not an email address. Tagging it as "email"
+                # would pollute MasterIdentity.email anchors and corrupt fusion.
+                results.append(
+                    DiscoveryResult(
+                        source_tool="holehe",
+                        target_type="account",
+                        value=service,
+                        metadata={"used": True, "email": target, "service": service},
+                    )
+                )
+                logger.info(f"[✓] holehe: {target} -> {service}")
         except Exception as e:
-            logger.info(f"[x] holehe: {target} - Error")
-            logger.info(f"Error parsing holehe output: {e}")
+            logger.info(f"[x] holehe: {target} - Error parsing holehe output: {e}")
 
         return results

@@ -13,6 +13,7 @@ def sha256_hex(val: str) -> str:
 from connectors.base import DiscoveryResult
 from path_utils import get_report_dir
 from models import IdentityAnchor
+from blocklist import is_local_noise
 
 
 def update_identity_from_results(identity, results: List[DiscoveryResult]):
@@ -24,6 +25,10 @@ def update_identity_from_results(identity, results: List[DiscoveryResult]):
         return
     for res in results:
         if not res:
+            continue
+        # Drop artifacts that are really local project noise (tool names,
+        # source paths) before they enter the identity graph.
+        if res.value and is_local_noise(res.value):
             continue
         if res.target_type == "email":
             existing = [a.value for a in identity.email]

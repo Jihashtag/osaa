@@ -1,8 +1,8 @@
 import unittest
 import asyncio
 from unittest.mock import MagicMock
-from osaa.orchestrator import Orchestrator
-from osaa.models import Knowledge
+from orchestrator import Orchestrator
+from models import Knowledge
 
 
 class TestOrchestratorKnowledge(unittest.TestCase):
