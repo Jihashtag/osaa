@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 from time import sleep
 from typing import List
@@ -40,6 +41,13 @@ class MockTranslation:
 
 class HolmesConnector(BaseConnector):
 
+    # Re-validate the holmes proxy pool at most once per this window, and never
+    # check more than this many proxies (the bundled list has hundreds of mostly
+    # dead entries, each costing a network round-trip).
+    PROXY_CACHE_TTL = 86400  # 24h
+    MAX_PROXY_CHECK = 30
+    PROXY_CHECK_TIMEOUT = 3  # seconds
+
     def __init__(self, holmes_dir: str = None):
         if holmes_dir is None:
             BASE_DIR = os.path.dirname(
@@ -69,14 +77,26 @@ class HolmesConnector(BaseConnector):
         if not os.path.exists(proxy_all):
             return
 
+        # Disk cache: if a recently-written working list exists, reuse it.
+        if os.path.exists(proxy_out):
+            age = time.time() - os.path.getmtime(proxy_out)
+            if age < self.PROXY_CACHE_TTL:
+                logger.info("holmes: using cached working proxies (within TTL)")
+                return
+
         try:
             with open(proxy_all, "r") as f:
                 proxies = [line.strip() for line in f if line.strip()]
+            proxies = proxies[: self.MAX_PROXY_CHECK]
 
-            working = await get_working_proxies(proxies)
+            working = await get_working_proxies(
+                proxies, timeout=self.PROXY_CHECK_TIMEOUT
+            )
             logger.info(f"Working proxies: {working}")
             if not any(working):
-                working = await get_working_proxies(load_proxies())
+                working = await get_working_proxies(
+                    load_proxies(), timeout=self.PROXY_CHECK_TIMEOUT
+                )
 
             with open(proxy_out, "w") as f:
                 for p in working:

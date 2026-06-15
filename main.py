@@ -25,11 +25,16 @@ async def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logs")
     parser.add_argument(
         "--ai-agent",
-        choices=["lms", "ollama", "gemini"],
+        choices=["lms", "ollama", "gemini", "ollama-http", "lms-server"],
         default="lms",
-        help="AI agent to use for analysis",
+        help="AI agent to use for analysis (the *-http/server variants reuse a "
+        "running LLM server and are much faster)",
     )
     parser.add_argument("--model", help="Model the AI agent should use")
+    parser.add_argument(
+        "--ai-endpoint",
+        help="Base URL for the HTTP LLM backends (default: ollama 11434 / lms 1234)",
+    )
     parser.add_argument(
         "--proxy_list", help="Path to a file containing proxies (ip:port)"
     )
@@ -38,6 +43,10 @@ async def main():
     )
     parser.add_argument(
         "--knowledge-file", help="Path to a JSON file containing certified knowledge"
+    )
+    parser.add_argument(
+        "--knowledge",
+        help="Free-text knowledge about the target (alternative to --knowledge-file)",
     )
 
     args = parser.parse_args()
@@ -63,6 +72,14 @@ async def main():
     knowledge = None
     if args.knowledge_file:
         knowledge = KnowledgeLoader.from_json(args.knowledge_file)
+    elif args.knowledge:
+        # Free-text knowledge + the known identity fields.
+        knowledge = KnowledgeLoader.from_text(
+            args.knowledge,
+            username=args.username,
+            fullname=args.name,
+            email=args.email,
+        )
     else:
         # Fallback to CLI basic knowledge
         knowledge = KnowledgeLoader.from_dict(
@@ -102,9 +119,23 @@ async def main():
         {"type": key, "value": val} for key, val in target.items()
     ] + additional_targets
 
+    if args.dry_run:
+        print("[*] DRY RUN — execution plan (no network I/O):")
+        print(f"    output dir: {output_dir}")
+        print(f"    knowledge : {knowledge.to_dict() if knowledge else None}")
+        for entry in orchestrator.plan(targets):
+            print(
+                f"    [{entry['type']}] {entry['value']} -> "
+                f"{', '.join(entry['connectors']) or '(no connectors)'}"
+            )
+        print(f"    total targets: {len(targets)}")
+        return
+
     await orchestrator.run_full_pipeline(targets)
 
-    analyst = AIAnalyst(agent_type=args.ai_agent, model_name=args.model)
+    analyst = AIAnalyst(
+        agent_type=args.ai_agent, model_name=args.model, endpoint=args.ai_endpoint
+    )
     writer = AIReportWriter(analyst)
 
     final_md = await writer.generate_report(

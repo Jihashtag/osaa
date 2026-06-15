@@ -106,3 +106,10 @@ class TorMultiSearchConnector(BaseConnector):
 - **Circuit Maintenance**: Periodically renew the Tor circuit using `stem` to ensure different exit nodes are used for different engines.
 - **Robustness**: Always wrap engine-calls in `try/except` blocks so one engine's downtime does not crash the entire search pipeline.
 - **Configuration**: Avoid hardcoding search engine URLs if possible. Move them to a separate configuration file in `osaa/config/` for easier maintenance as `.onion` links change.
+
+## Result validation
+Onion search front-ends often render the query back on an otherwise-empty page.
+The connector gates every captured page through
+`utils.result_validation.is_meaningful_result(query, content, links)`, which
+rejects bare query echoes (content ≈ query with no surrounding text or links) so
+they never enter the evidence set.

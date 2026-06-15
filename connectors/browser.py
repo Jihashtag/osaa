@@ -16,9 +16,16 @@ from typing import List
 from selenium import webdriver
 from selenium_stealth import stealth
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
 
 from connectors.base import BaseConnector, DiscoveryResult
 from utils.scraper import handle_captcha
+from utils.url_filter import (
+    is_search_engine_url,
+    looks_like_serp,
+    is_bot_block,
+    registered_domain,
+)
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -57,7 +64,8 @@ def response_checker(perfLog: any) -> bool:
 
 class BrowserConnector(BaseConnector):
     def __init__(self):
-        pass
+        # Hard cap on page load so an unresponsive site cannot stall the run.
+        self.page_load_timeout = int(os.getenv("BROWSER_PAGELOAD_TIMEOUT", "20"))
 
     @property
     def supported_types(self) -> List[str]:
@@ -112,7 +120,7 @@ class BrowserConnector(BaseConnector):
             body = driver.find_element(By.TAG_NAME, "body")
             content = body.text.lower()
 
-            if " not a robot" in content or " pas un robot" in content:
+            if is_bot_block(driver.current_url, content):
                 logger.error(f"[x] Browser - {driver.current_url} was spotted")
                 # We were spotted as a robot.
                 # Todo : Retry with firefox and/or ipv4/ipv6
@@ -120,8 +128,13 @@ class BrowserConnector(BaseConnector):
                 sleep(random.uniform(3, 5))
                 body = driver.find_element(By.TAG_NAME, "body")
                 content = body.text.lower()
-                if " not a robot" in content or " pas un robot" in content:
+                if is_bot_block(driver.current_url, content):
                     return None
+            # Reject search-engine result pages: the target string appears on
+            # them by construction, but they are not evidence about the subject.
+            if looks_like_serp(content):
+                logger.debug(f"[x] Browser - {driver.current_url} looks like a SERP")
+                return None
             if not any(
                 target in content
                 and "{target} not found" not in content
@@ -221,50 +234,112 @@ class BrowserConnector(BaseConnector):
             # We propably clicked already
             pass
 
-    async def run(
-        self, target_url: str, proxy: str = None, **kwargs
-    ) -> List[DiscoveryResult]:
-        self.res_dir = get_report_dir()
+    def _resolve_target(self, target_url: str, blocked_domains: set = None):
+        """Resolve a raw target into a URL to visit, or None to skip.
 
-        if not target_url.startswith("http"):
+        A bare token (username/name) is a *seed* search routed through an
+        engine; a full URL is a *discovered result* (skipped if it is a SERP or
+        on a domain that already bot-blocked us this run)."""
+        is_seed = not target_url.startswith("http")
+        if not is_seed and is_search_engine_url(target_url):
+            logger.debug(f"[skip] SERP/engine URL not treated as evidence: {target_url}")
+            return None
+        if (
+            not is_seed
+            and blocked_domains is not None
+            and registered_domain(target_url) in blocked_domains
+        ):
+            logger.debug(f"[skip] domain previously bot-blocked: {target_url}")
+            return None
+        if is_seed:
             target_url = random.choice(NAVIGATE_TO) + target_url
+        return target_url
 
+    async def _visit(
+        self, driver, target_url: str, blocked_domains: set = None
+    ) -> List[DiscoveryResult]:
+        """Visit one already-resolved URL on an existing driver and return any
+        evidence. Never raises for per-page issues (returns [])."""
+        try:
+            driver.set_page_load_timeout(self.page_load_timeout)
+            driver.get(target_url)
+        except TimeoutException:
+            logger.error(f"[x] Browser - page load timed out: {target_url}")
+            return []
+        await asyncio.sleep(random.uniform(3, 5))
+
+        # Detect bot-block interstitials (e.g. Google /sorry) and record the
+        # domain so the rest of the run stops hammering it.
+        if is_bot_block(driver.current_url):
+            dom = registered_domain(driver.current_url)
+            logger.warning(f"[x] Browser - bot-blocked on {dom}, backing off")
+            if blocked_domains is not None and dom:
+                blocked_domains.add(dom)
+            return []
+
+        await self._navigate(driver)
+
+        perfLog = driver.get_log("performance")
+        if not response_checker(perfLog):
+            return []
+
+        ret = self._content_checker(driver)
+        if ret is None:
+            return []
+
+        raw_path, content = ret
+        self._capture_media(driver, raw_path)
+        with open(raw_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        logger.info(f"[✓] Browser - {target_url}")
+        return [DiscoveryResult("browser", "url", target_url, {"raw_path": raw_path})]
+
+    async def run(
+        self,
+        target_url: str,
+        proxy: str = None,
+        blocked_domains: set = None,
+        **kwargs,
+    ) -> List[DiscoveryResult]:
+        """Visit a single target (thin wrapper around run_many)."""
+        return await self.run_many([target_url], proxy=proxy, blocked_domains=blocked_domains)
+
+    async def run_many(
+        self,
+        urls: List[str],
+        proxy: str = None,
+        blocked_domains: set = None,
+    ) -> List[DiscoveryResult]:
+        """Visit several URLs reusing ONE Chrome instance (launching+patching a
+        fresh driver per URL was the dominant cost of a run)."""
+        self.res_dir = get_report_dir()
+        results: List[DiscoveryResult] = []
+        # Don't pay a Chrome launch if every URL would be skipped (all SERPs /
+        # all on blocked domains).
+        if not any(self._resolve_target(u, blocked_domains) for u in urls):
+            return []
         driver = None
         try:
             driver = self._setup_driver(proxy=proxy)
             if not driver:
                 logger.error("[x] Browser could not init driver")
                 return []
-            driver.get(target_url)
-            await asyncio.sleep(random.uniform(3, 5))
-
-            await self._navigate(driver)
-
-            perfLog = driver.get_log("performance")
-            if not response_checker(perfLog):
-                return []
-
-            ret = self._content_checker(driver)
-            if ret is None:
-                return []
-
-            raw_path, content = ret
-            self._capture_media(driver, raw_path)
-
-            with open(raw_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            logger.info(f"[✓] Browser - {target_url}")
-            return [
-                DiscoveryResult("browser", "url", target_url, {"raw_path": raw_path})
-            ]
-        except Exception as e:
-            logger.error(f"[x] Browser - {target_url} : {e}")
-            return []
+            for raw_url in urls:
+                # Resolve lazily so a domain that bot-blocks us mid-batch is
+                # skipped for its remaining URLs.
+                resolved = self._resolve_target(raw_url, blocked_domains)
+                if resolved is None:
+                    continue
+                try:
+                    results.extend(await self._visit(driver, resolved, blocked_domains))
+                except Exception as e:
+                    logger.error(f"[x] Browser - {raw_url} : {e}")
         finally:
             if driver:
                 try:
                     driver.close()
                     driver.quit()
-                except:
+                except Exception:
                     pass
+        return results

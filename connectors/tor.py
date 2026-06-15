@@ -15,6 +15,7 @@ from selenium.webdriver.common.keys import Keys
 from logger import get_logger
 from utils.scraper import handle_captcha
 from connectors.base import BaseConnector, DiscoveryResult
+from utils.result_validation import is_meaningful_result
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -149,7 +150,7 @@ class TorConnector(BaseConnector):
 
                     # Check content
                     content = driver.find_element(By.TAG_NAME, "body").text
-                    if target.lower() in content.lower():
+                    if is_meaningful_result(target, content):
                         content_hash = hashlib.md5(content.encode()).hexdigest()
                         raw_path = os.path.join(self.res_dir, f"tor_{content_hash}.raw")
                         with open(raw_path, "w", encoding="utf-8") as f:
@@ -192,7 +193,7 @@ class TorConnector(BaseConnector):
                     self._handle_captcha(driver)
 
                     content = driver.find_element(By.TAG_NAME, "body").text
-                    if target.lower() in content.lower():
+                    if is_meaningful_result(target, content):
                         content_hash = hashlib.md5(content.encode()).hexdigest()
                         raw_path = os.path.join(
                             self.res_dir, f"tor_global_{content_hash}.raw"

@@ -18,6 +18,24 @@ class KnowledgeLoader:
             metadata=data.get("metadata", {}),
         )
 
+    _IDENTITY_KEYS = {"email", "username", "fullname", "phone", "address"}
+
+    @staticmethod
+    def from_text(text: str, **identity_fields: Any) -> Knowledge:
+        """Build Knowledge from free-text notes plus optional identity fields.
+
+        Lets a user pass what they already know on the CLI
+        (``--knowledge "..."``) without authoring a JSON file. The notes are
+        carried in ``metadata['notes']`` and reach the analyst via
+        ``Knowledge.to_dict()``."""
+        identity = {
+            k: v
+            for k, v in identity_fields.items()
+            if k in KnowledgeLoader._IDENTITY_KEYS and v
+        }
+        metadata = {"notes": text} if text else {}
+        return Knowledge(identity=identity, metadata=metadata)
+
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> Knowledge:
         """

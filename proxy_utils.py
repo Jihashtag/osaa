@@ -10,16 +10,11 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
-PROXIES = None
-
-
 def load_proxies(file_path=None):
-    """Loads proxies from a file. Preserves scheme if present, defaults to http://."""
+    """Loads proxies from a file. Preserves scheme if present, defaults to http://.
 
-    global PROXIES
-
-    if PROXIES is not None:
-        return PROXIES
+    No process-global memoization: a cached list leaked between unrelated calls
+    (and between tests) and silently ignored a changed file."""
     proxies = []
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -32,7 +27,6 @@ def load_proxies(file_path=None):
                         proxies.append(f"http://{line}")
     except Exception as e:
         logger.error(f"Error loading proxy list: {e}")
-    PROXIES = proxies
     return proxies
 
 
@@ -53,8 +47,8 @@ def check_proxy(proxy, timeout=5):
         return False
 
 
-async def get_working_proxies(proxies):
+async def get_working_proxies(proxies, timeout=5):
     """Filters working proxies using parallel threads."""
-    tasks = [asyncio.to_thread(check_proxy, p) for p in proxies]
+    tasks = [asyncio.to_thread(check_proxy, p, timeout) for p in proxies]
     results = await asyncio.gather(*tasks)
     return [p for p, is_up in zip(proxies, results) if is_up]

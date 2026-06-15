@@ -63,6 +63,31 @@ class IdentityExpander:
     Generates permutations of identities to expand the search surface.
     """
 
+    # Mailbox providers used to speculatively derive candidate emails from a
+    # username (so username-only investigations still get account-existence
+    # signal). Ordered by global prevalence.
+    DEFAULT_EMAIL_DOMAINS = [
+        "gmail.com",
+        "outlook.com",
+        "hotmail.com",
+        "yahoo.com",
+        "proton.me",
+    ]
+
+    @staticmethod
+    def derive_candidate_emails(
+        username: str, domains: List[str] = None, limit: int = 5
+    ) -> List[str]:
+        """Return ``<username>@<domain>`` candidates for account-existence checks.
+
+        These are speculative: callers must down-weight any resulting artifacts
+        and tag them as such."""
+        if not username or not str(username).strip():
+            return []
+        user = str(username).strip().lower()
+        domains = domains or IdentityExpander.DEFAULT_EMAIL_DOMAINS
+        return [f"{user}@{d}" for d in domains][:limit]
+
     @staticmethod
     def generate_username_permutations(base: str) -> List[Dict[str, str]]:
         """

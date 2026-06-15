@@ -28,3 +28,14 @@ python3 main.py --email target@example.com --username target_user
 3. **Discovery**: Registered `Connectors` (Holehe, Holmes, Tookie, BrowserConnector, etc.) are executed by the `Orchestrator`.
 4. **Processing**: Discovered artifacts are normalized and stored in `MasterIdentity`.
 5. **Report**: The `AIAnalyst` (LLM) generates a final investigation report based on collected artifacts.
+
+### What the analyst sees, and report sections
+- The report writer sends the analyst the **captured page content** (read from
+  each artifact's `raw_path`, truncated), not just the URL, and batches
+  artifacts into a single call per batch rather than one call each.
+- Reports include a **Knowledge Corroboration** table (section 2.1) marking each
+  certified fact as corroborated / partial / unconfirmed, and an **Evidence
+  Log** that drops search-engine result pages, clusters duplicates by domain,
+  and shows per-row confidence and source reliability.
+- AI backends: CLI (`lms`/`ollama`/`gemini`) or persistent HTTP servers
+  (`ollama-http`/`lms-server`, recommended for speed).

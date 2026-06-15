@@ -5,6 +5,23 @@ from knowledge_loader import KnowledgeLoader
 from models import Knowledge
 
 
+class TestKnowledgeFromText(unittest.TestCase):
+    def test_from_text_carries_notes_and_identity(self):
+        k = KnowledgeLoader.from_text(
+            "french medical student in Lille", username="lolla_lamb15", email=None
+        )
+        self.assertIsInstance(k, Knowledge)
+        self.assertEqual(k.identity, {"username": "lolla_lamb15"})
+        self.assertEqual(k.metadata["notes"], "french medical student in Lille")
+        # to_dict must include the notes so the analyst sees them
+        self.assertIn("notes", k.to_dict()["metadata"])
+
+    def test_from_text_empty_is_safe(self):
+        k = KnowledgeLoader.from_text("", username="u")
+        self.assertEqual(k.metadata, {})
+        self.assertEqual(k.identity, {"username": "u"})
+
+
 class TestKnowledgeLoader(unittest.TestCase):
     def setUp(self):
         self.test_json_path = "test_knowledge.json"

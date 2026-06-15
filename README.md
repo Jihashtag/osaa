@@ -23,9 +23,16 @@ The `osaa` tool is a recursive, modular OSINT fusion engine designed for local i
    ./setup_all.sh
    ```
 
-2. **Local AI Model**:
-   - **Option A (Preferred)**: Ensure `gemini` CLI is installed and configured.
-   - **Option B (Fallback)**: Ensure Ollama is running (`ollama serve`) and pull the model: `ollama pull llama3.2:1b`.
+2. **Local AI Model**: pick a backend with `--ai-agent`.
+   - **CLI backends** (spawn a process per call): `lms`, `ollama`, `gemini`.
+   - **Persistent HTTP backends** (reuse a running server — *recommended*, far
+     faster as a report makes several calls): `ollama-http` (Ollama HTTP API,
+     default `http://localhost:11434`) and `lms-server` (LM Studio
+     OpenAI-compatible server, default `http://localhost:1234`). Override the
+     URL with `--ai-endpoint`.
+   - **Model quality**: a 1B model is too weak for analysis. Defaults are now a
+     ~4B local model (`google/gemma-3n-e4b` for LM Studio). Override with
+     `--model`; use a smaller one if you need speed over depth.
 
 ## Usage
 
@@ -41,9 +48,17 @@ await orch.run_full_pipeline(targets)
 ### CLI Execution
 ```bash
 python3 main.py --username target_user
+
+# Free-text knowledge + a fast persistent backend, preview the plan first:
+python3 main.py --username target_user --name "Jane Doe" \
+  --knowledge "French medical student in Lille, ~20s" \
+  --ai-agent ollama-http --dry-run
 ```
-Other flags: `--name`, `--email`, `--ratio`, `--proxy_list`, `--knowledge-file`,
-`--ai-agent {lms,ollama,gemini}`, `--model`, `--debug`, `--dry-run`.
+Flags: `--name`, `--email`, `--ratio`, `--proxy_list`,
+`--knowledge-file` / `--knowledge "<text>"`,
+`--ai-agent {lms,ollama,gemini,ollama-http,lms-server}`, `--model`,
+`--ai-endpoint`, `--debug`, `--dry-run` (print the execution plan and exit
+without any network I/O).
 
 ## Testing
 

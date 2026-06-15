@@ -16,8 +16,10 @@ from connectors.holehe import HoleheConnector
 from connectors.holmes import HolmesConnector
 from connectors.breach import BreachConnector
 from identity_utils import update_identity_from_results
+from identity_expander import IdentityExpander
 from models import MasterIdentity, Knowledge
 from proxy_utils import check_proxy
+from utils.url_filter import cap_per_domain, is_search_engine_url
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -45,6 +47,10 @@ class Orchestrator:
         # re-validate after this TTL elapses.
         self._proxy_check_ttl = 300  # seconds
         self._proxy_last_checked = 0.0
+        # Domains that bot-blocked us this run; the browser backs off from them.
+        self._blocked_domains: set = set()
+        # Max result URLs to visit per domain (generous: maximise results).
+        self.max_urls_per_domain = 5
 
     async def _run_with_semaphore(
         self, name: str, connector, target: str, proxies: List[str] = None, **kwargs
@@ -83,6 +89,102 @@ class Orchestrator:
                 logger.error(f"[x] {name} on {target}: {e}")
                 return []
 
+    def plan(self, targets: List[Dict[str, str]]) -> List[Dict]:
+        """Return the execution plan (which connectors would run per target)
+        without performing any network I/O. Backs ``--dry-run``."""
+        plan = []
+        for target in targets:
+            t_type = target.get("type")
+            val = target.get("value")
+            if not val:
+                continue
+            names = [
+                name
+                for name, connector in self.connectors.items()
+                if name != "browser" and t_type in connector.supported_types
+            ]
+            plan.append({"type": t_type, "value": val, "connectors": names})
+        return plan
+
+    async def _browse_urls(self, browser, urls: List[str]) -> List:
+        """Browse a set of URLs, reusing one Chrome per proxy chunk (or one for
+        the whole set when there are no proxies). Returns collected artifacts."""
+        if not urls:
+            return []
+        artifacts: List = []
+
+        async def _chunk(chunk, proxy=None):
+            async with self.semaphore:
+                try:
+                    return await browser.run_many(
+                        chunk,
+                        proxy=proxy,
+                        blocked_domains=self._blocked_domains,
+                    )
+                except Exception as e:
+                    logger.error(f"Error on Browser chunk (proxy={proxy}): {e}")
+                    return []
+
+        if self.working_proxies:
+            num = len(self.working_proxies)
+            size = max(1, len(urls) // num)
+            chunks = [urls[i : i + size] for i in range(0, len(urls), size)]
+            tasks = [
+                _chunk(chunk, self.working_proxies[idx % num])
+                for idx, chunk in enumerate(chunks)
+            ]
+            for res in await asyncio.gather(*tasks, return_exceptions=True):
+                if isinstance(res, list):
+                    artifacts.extend(res)
+                elif isinstance(res, Exception):
+                    logger.error(f"Error on Browser Task: {res}")
+        else:
+            artifacts.extend(await _chunk(urls))
+        return artifacts
+
+    async def _run_speculative_account_checks(self):
+        """When the subject has a username but no known email, derive candidate
+        emails and run the email-capable connectors (holehe/breach) on them so a
+        username-only investigation still yields account-existence signal.
+
+        Results are tagged ``speculative`` and confidence-capped so they never
+        outrank confirmed findings (commandment 1: maximise results, safely)."""
+        if self.identity.email:
+            return  # a real email is known; no need to guess
+        usernames = list({a.value for a in self.identity.username if a})
+        if not usernames:
+            return
+
+        candidates = []
+        for user in usernames[:3]:
+            candidates.extend(IdentityExpander.derive_candidate_emails(user))
+        candidates = list(dict.fromkeys(candidates))  # dedupe, keep order
+
+        tasks = []
+        for email in candidates:
+            for name in ("holehe", "breach"):
+                connector = self.connectors[name]
+                if "email" in connector.supported_types:
+                    tasks.append(
+                        self._run_with_semaphore(
+                            name, connector, email, self.working_proxies
+                        )
+                    )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for res in results:
+            if not isinstance(res, list):
+                continue
+            for r in res:
+                meta = getattr(r, "metadata", None)
+                if isinstance(meta, dict):
+                    meta["speculative"] = True
+                if hasattr(r, "confidence"):
+                    r.confidence = min(float(r.confidence or 1.0), 0.5)
+            update_identity_from_results(self.identity, res)
+            self.identity.raw_artifacts.extend(
+                r for r in res if r.target_type != "url"
+            )
+
     async def _update_working_proxies(self, force: bool = False):
         """Checks which proxies are up, caching the result for a TTL window."""
         if not self.proxies:
@@ -114,6 +216,7 @@ class Orchestrator:
     ):
         if knowledge:
             self.knowledge = knowledge
+        self._blocked_domains = set()  # fresh per run
         self.connectors["browser"].set_targets(targets)
         browser = self.connectors["browser"]
         i = 0
@@ -171,6 +274,10 @@ class Orchestrator:
 
             # 2. Browser
             urls = list(set(self.identity.discovered_urls))
+            # Drop search-engine result pages (not evidence) and bound the crawl
+            # to a few URLs per domain so one domain can't dominate the budget.
+            urls = [u for u in urls if not is_search_engine_url(u)]
+            urls = cap_per_domain(urls, n=self.max_urls_per_domain)
             # TODO : Order by pertinence (similarities with default identity ?)
             shuffle(urls)
             ratio_browser = len(urls) * self.ratio
@@ -179,100 +286,19 @@ class Orchestrator:
                 urls = urls[: int(ratio_browser)]
 
             await self._update_working_proxies()
-            if self.working_proxies:
-                # Parallelize across proxies: sequential per proxy
-                num_proxies = len(self.working_proxies)
-                chunk_size = max(1, len(urls) // num_proxies)
-                url_chunks = [
-                    urls[i : i + chunk_size] for i in range(0, len(urls), chunk_size)
-                ]
-
-                async def _run_browser_chunk(chunk, proxy):
-                    chunk_results = []
-                    for url in chunk:
-                        try:
-                            res = await self._run_with_semaphore(
-                                "browser",
-                                browser,
-                                url,
-                                proxies=[proxy] if proxy else None,
-                            )
-                            chunk_results.extend(res)
-                        except Exception as e:
-                            logger.error(
-                                f"Error on Browsing {url} with proxy {proxy}: {e}"
-                            )
-                    return chunk_results
-
-                tasks = []
-                for idx, chunk in enumerate(url_chunks):
-                    proxy = self.working_proxies[idx % num_proxies]
-                    tasks.append(_run_browser_chunk(chunk, proxy))
-
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for res in results:
-                    if isinstance(res, list):
-                        self.identity.raw_artifacts.extend(res)
-                    elif isinstance(res, Exception):
-                        logger.error(f"Error on Browser Task: {res}")
-            else:
-                for url in urls:
-                    try:
-                        res = await self._run_with_semaphore("browser", browser, url)
-                        self.identity.raw_artifacts.extend(res)
-                    except Exception as e:
-                        logger.error(f"Error on Browsing {url} : {e}")
-                        continue
+            self.identity.raw_artifacts.extend(await self._browse_urls(browser, urls))
 
             # We don't want to keep artifacts
             self.identity.discovered_urls.clear()
             # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
             gc.collect()
 
+        # 2.5 Speculative account-existence checks on usernames lacking an email.
+        await self._run_speculative_account_checks()
+
         await self._update_working_proxies()
-        # 3. Browser again but now search specifics usernames for additional informations
+        # 3. Browser again but now search specific usernames for additional info.
         usernames = list(set([a.value for a in self.identity.username]))
-        if self.working_proxies:
-            # Parallelize across proxies: sequential per proxy
-            num_proxies = len(self.working_proxies)
-            chunk_size = max(1, len(usernames) // num_proxies)
-            user_chunks = [
-                usernames[i : i + chunk_size]
-                for i in range(0, len(usernames), chunk_size)
-            ]
-
-            async def _run_user_chunk(chunk, proxy):
-                chunk_results = []
-                for user in chunk:
-                    try:
-                        res = await self._run_with_semaphore(
-                            "browser", browser, user, proxies=[proxy] if proxy else None
-                        )
-                        chunk_results.extend(res)
-                    except Exception as e:
-                        logger.error(
-                            f"Error on Browsing user {user} with proxy {proxy}: {e}"
-                        )
-                return chunk_results
-
-            tasks = []
-            for idx, chunk in enumerate(user_chunks):
-                proxy = self.working_proxies[idx % num_proxies]
-                tasks.append(_run_user_chunk(chunk, proxy))
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for res in results:
-                if isinstance(res, list):
-                    self.identity.raw_artifacts.extend(res)
-                elif isinstance(res, Exception):
-                    logger.error(f"Error on Browser User Task: {res}")
-        else:
-            for username in usernames:
-                try:
-                    res = await self._run_with_semaphore("browser", browser, username)
-                    self.identity.raw_artifacts.extend(res)
-                except Exception as e:
-                    logger.error(f"Error on Browsing user {username} : {e}")
-                    continue
+        self.identity.raw_artifacts.extend(await self._browse_urls(browser, usernames))
         # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
         gc.collect()
