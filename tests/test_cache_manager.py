@@ -1,6 +1,19 @@
-import unittest
 import os
+import tempfile
+import unittest
 from utils.cache import CacheManager
+
+
+class TestCacheManagerInit(unittest.TestCase):
+    def test_creates_missing_parent_directory(self):
+        # Reproduces the CI failure: the target directory does not exist yet.
+        base = tempfile.mkdtemp()
+        db_path = os.path.join(base, "database", "fresh.sqlite")
+        self.assertFalse(os.path.isdir(os.path.dirname(db_path)))
+        manager = CacheManager(db_path=db_path)  # must not raise
+        self.assertTrue(os.path.exists(manager.db_path))
+        manager.record_discovery("h", {"ok": 1})
+        self.assertEqual(manager.check_hit("h"), {"ok": 1})
 
 
 class TestCacheManager(unittest.TestCase):

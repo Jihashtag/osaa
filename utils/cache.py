@@ -9,9 +9,16 @@ class CacheManager:
     Manages SQLite-based caching for OSINT artifacts.
     """
 
-    def __init__(self, db_name: str = "cache.sqlite"):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.db_path = os.path.join(base_dir, "database", db_name)
+    def __init__(self, db_name: str = "cache.sqlite", db_path: str = None):
+        if db_path:
+            self.db_path = db_path
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.db_path = os.path.join(base_dir, "database", db_name)
+        # The "database/" directory is not tracked by git (git can't store empty
+        # dirs), so a fresh checkout (CI) won't have it. Create it on demand;
+        # otherwise sqlite3.connect raises "unable to open database file".
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
 
     def _init_db(self):
