@@ -1,50 +1,59 @@
-# Logic Documentation
+# System Logic & Hardening Mechanisms
 
-The Orchestrator follows a modular, extensible design pattern.
+This document outlines the core logic patterns, heuristic validation steps, and performance optimizations implemented within the `osaa` engine.
+
+---
 
 ## Core Logic Flow
 
-1. **Orchestrator (`orchestrator.py`)**: 
-   The central loop. It manages the investigation lifecycle. It coordinates the different `Connectors` to run against investigation targets, osaaates results into a `MasterIdentity` object, and manages the browser-based discovery phase.
+1. **Orchestration Loop ([orchestrator.py](../orchestrator.py))**:
+   Coordinates the execution timeline. It handles state transitions inside [MasterIdentity](../models.py#L41) and controls concurrency throttling (limiting parallel executions to 5 concurrent workers via semaphores).
 
-2. **Connectors (`connectors/*.py`)**: 
-   All connectors inherit from `BaseConnector`. They execute the discovery tools (CLI wrappers or direct API calls) and normalize output into a list of `DiscoveryResult` objects.
+2. **Heuristic Normalization ([identity_expander.py](../identity_expander.py))**:
+   Performs token permutations and regex categorization to increase search coverage.
 
-3. **Identity Expansion (`identity_expander.py`)**:
-   Contains pure functions to generate username and email variants. This is purely heuristic-based and does not involve network calls.
+3. **Discovery Dispatch ([connectors/](../connectors))**:
+   Runs queries across CLI utilities, HTTP connections, or Chromium automation. Results are normalized into [DiscoveryResult](../connectors/base.py#L7) tuples.
 
-4. **Reporter (`reporters/ai_report_writer.py`)**:
-   Responsible for processing collected artifacts and leveraging the `AIAnalyst` (LLM) to generate final reports.
+4. **Probabilistic Identity Fusion ([fusion_engine.py](../fusion_engine.py))**:
+   Compares newly found elements against established parameters using the logic:
+   $$P_{\text{link}} = (\text{FuzzScore} \times 0.6) + (\text{SourceTrust} \times 0.3) + (\text{ContextBonus} \times 0.1)$$
+   - **FuzzScore**: Fuzzy token ratio calculations via `rapidfuzz`.
+   - **SourceTrust**: Reliability parameters loaded from [reliability.yaml](../config/reliability.yaml).
+   - **ContextBonus**: Elevated weighting (+0.1) when emails share privacy-focused domains (e.g. ProtonMail, Tutanota).
+   - If $P_{\text{link}} \ge 0.80$, the link is merged. Warnings are issued for potential links ($0.60 \le P < 0.80$).
 
+5. **AI Extraction & Report Generation ([reporters/ai_report_writer.py](../reporters/ai_report_writer.py))**:
+   Collates evidence, clusters references by registered domains, assesses corroboration, and produces the finalized markdown analysis.
 
-## Pipeline hardening — search quality & performance
+---
 
-These behaviours keep the evidence set relevant and bound a run's cost. The
-URL/relevance heuristics live as pure, unit-tested helpers in
-`utils/url_filter.py` and `utils/result_validation.py`.
+## Pipeline Hardening, Relevance & Cost Optimization
 
-- **URL filtering** (`utils/url_filter.py`): `is_search_engine_url()` identifies
-  pages served by the seed search engines — these are SERPs, never evidence.
-  The browser skips such *discovered* URLs before launching Chrome, and the
-  report's Evidence Log omits them.
-- **Relevance gating**: `looks_like_serp()` rejects captured pages that are
-  themselves search-results listings (the target appears on them by
-  construction); the browser content gate also requires the target to appear in
-  page text rather than accepting any incidental mention.
-- **Result validation** (`utils/result_validation.py`): `is_meaningful_result()`
-  rejects pages that merely echo the query (the Tor onion front-ends do this).
-- **Browser budgeting**: discovered URLs are de-duplicated, SERP-filtered and
-  capped to `Orchestrator.max_urls_per_domain` per domain. A page-load timeout
-  (`BROWSER_PAGELOAD_TIMEOUT`, default 20s) prevents stalls, and bot-block
-  pages (e.g. Google `/sorry`) record the domain in a per-run backoff set so it
-  is not hit again.
-- **Driver reuse**: `BrowserConnector.run_many()` visits a batch of URLs on a
-  single Chrome instance (per proxy chunk) instead of relaunching+patching a
-  driver per URL — the dominant cost of a run.
-- **Speculative account checks**: for a username with no known email, the
-  orchestrator derives `<user>@<provider>` candidates
-  (`IdentityExpander.derive_candidate_emails`) and runs the email connectors on
-  them, flagging results `speculative` and capping their confidence.
-- **Knowledge corroboration** (`reporters/corroboration.py`): each biographical
-  knowledge fact is marked `corroborated` / `partial` / `unconfirmed` against
-  the collected evidence and rendered in report section 2.1.
+To limit API/network overhead and prevent analysis pollution, `osaa` enforces several filters:
+
+### 1. Relevance Gating & URL Filtering
+- **SERP Filtering ([url_filter.py](../utils/url_filter.py#L86))**:
+  Identifies and discards URLs of known search engines (e.g. Google, Bing, Yandex). These are Search Engine Result Pages (SERPs) containing the query by construction, and do not represent target evidence.
+- **SERP Body Detection ([url_filter.py](../utils/url_filter.py#L99))**:
+  Scans pages for co-occurring search-related tokens ("safe search", "did you mean", "images", "videos"). If 3 or more co-occur, the page is flagged as a SERP and omitted.
+- **Empty Echo Validation ([result_validation.py](../utils/result_validation.py#L15))**:
+  onion directories often return the search query on an empty error page. [is_meaningful_result](../utils/result_validation.py#L15) rejects documents if they contain the query but lack external links or have insufficient surrounding characters.
+
+### 2. Browser Budgeting & Performance Throttling
+- **Domain Caps ([url_filter.py](../utils/url_filter.py#L120))**:
+  Caps the crawled URLs from any single domain (default: 5). This prevents single sites (e.g. forums) from consuming the whole processing time.
+- **Bot-Block Interstitial Handling ([url_filter.py](../utils/url_filter.py#L111))**:
+  Detects captcha blocks and adds the domain to a per-run blacklist, preventing further attempts on that domain.
+- **Chrome Driver Reuse ([browser.py](../connectors/browser.py#L308))**:
+  [run_many](../connectors/browser.py#L308) queries a batch of targets on a single Chrome instance, removing the high cost of launching a new driver process for each link.
+
+### 3. Speculative Verification
+- **Email derivation ([identity_expander.py](../identity_expander.py#L78))**:
+  If only a username is known, it generates hypothetical emails (e.g., `user@gmail.com`, `user@proton.me`) to run through Holehe and Breach checks.
+- **Down-weighting ([orchestrator.py](../orchestrator.py#L182))**:
+  Speculative hits are tagged as `speculative` and capped at 0.5 confidence, ensuring they do not pollute official findings.
+
+### 4. Knowledge Corroboration
+- **Fact Checking ([corroboration.py](../reporters/corroboration.py#L33))**:
+  [assess](../reporters/corroboration.py#L33) compares biographical facts against extracted texts. It tags facts as `corroborated`, `partial`, or `unconfirmed` based on exact or fuzzy token matches.

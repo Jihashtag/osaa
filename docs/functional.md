@@ -1,41 +1,63 @@
-# Functional Documentation: Tool Usage
+# Functional Documentation: CLI & Pipeline Workflow
 
-The `osaa` tool provides a modular OSINT pipeline for local identity resolution.
+This document explains how to configure, execute, and analyze the results of the `osaa` OSINT tool.
 
-## Getting Started
+## Installation & Setup
 
-Ensure all sub-projects are cloned and dependencies are installed using `setup.sh`.
+All required modules, tools (Holehe, Holmes, Tookie), Tor dependencies, and virtual environment pip packages are installed using the unified setup script:
+```bash
+./[setup_all.sh](../setup_all.sh)
+```
+
+Ensure the Tor service daemon is running locally on your system to enable the [TorConnector](../connectors/tor.py#L28) or proxy-routed operations:
+```bash
+sudo systemctl start tor
+```
+
+---
 
 ## CLI Usage
 
-The tool is primarily executed via `main.py`.
+The tool is executed using [main.py](../main.py):
 
 ```bash
-python3 main.py --email target@example.com --username target_user
+python3 [main.py](../main.py) --username target_handle --name "Jane Doe" --ai-agent lms-server
 ```
 
-### Options
-- `--email`: Specify the primary email address of the target.
-- `--username`: Specify the primary username of the target.
-- `--fullname`: (Optional) Specify the full name for identity expansion.
-- `--proxy_list`: (Optional) Path to a file containing a list of proxies (format: `ip:port`).
-- `--debug`: Enable verbose debug logging.
+### Command Line Arguments
 
-## Pipeline Workflow
+- `--username`: Primary username of the target.
+- `--name`: Primary full name of the target.
+- `--email`: Primary email address of the target.
+- `--ratio`: Proportion of targets and discovered URLs to process (defaults to `0.33`).
+- `--debug`: Enable verbose logging output.
+- `--ai-agent`: Choose the AI backend for report synthesis (`lms`, `ollama`, `gemini`, `ollama-http`, `lms-server`). The `*-http` or `*-server` options are persistent HTTP connection options and run significantly faster.
+- `--model`: Specific LLM model to query. Defaults to `google/gemma-3n-e4b` for LMS and `llama3.2:1b` for Ollama.
+- `--ai-endpoint`: Endpoint URL overrides for persistent LLM servers.
+- `--proxy_list`: Path to a file containing newline-separated SOCKS5 or HTTP proxies formatted as `ip:port`.
+- `--dry-run`: Parses inputs and prints the target execution plan without making any network calls.
+- `--knowledge-file`: Path to a structured JSON file containing certified target details.
+- `--knowledge`: Raw text metadata describing context about the target.
 
-1. **Ingestion**: Input artifacts (email, username) are ingested into the `MasterIdentity` model.
-2. **Expansion**: `IdentityExpander` generates permutations of the input identifiers.
-3. **Discovery**: Registered `Connectors` (Holehe, Holmes, Tookie, BrowserConnector, etc.) are executed by the `Orchestrator`.
-4. **Processing**: Discovered artifacts are normalized and stored in `MasterIdentity`.
-5. **Report**: The `AIAnalyst` (LLM) generates a final investigation report based on collected artifacts.
+---
 
-### What the analyst sees, and report sections
-- The report writer sends the analyst the **captured page content** (read from
-  each artifact's `raw_path`, truncated), not just the URL, and batches
-  artifacts into a single call per batch rather than one call each.
-- Reports include a **Knowledge Corroboration** table (section 2.1) marking each
-  certified fact as corroborated / partial / unconfirmed, and an **Evidence
-  Log** that drops search-engine result pages, clusters duplicates by domain,
-  and shows per-row confidence and source reliability.
-- AI backends: CLI (`lms`/`ollama`/`gemini`) or persistent HTTP servers
-  (`ollama-http`/`lms-server`, recommended for speed).
+## Pipeline Execution Workflow
+
+The orchestrator executes the investigation through the following steps:
+
+1. **Ingestion & Instantiation**: The target values are loaded. Basic known information is stored as ground-truth [Knowledge](../models.py#L61).
+2. **Identity Expansion**: [IdentityExpander](../identity_expander.py#L61) runs permutations on the target names and usernames to create additional target aliases.
+3. **Execution Plan**: If `--dry-run` is active, it outputs which connectors are mapped to run against each target value and terminates.
+4. **Proxy Check**: Working proxies are verified, caching active results with a 5-minute TTL to reduce connection overhead.
+5. **Phase 1 Connectors**: Runs Holehe, Tookie, Holmes, Breach, and Searcher in parallel. Output links are mapped to standard fields in [MasterIdentity](../models.py#L41).
+6. **Phase 2 Chrome Crawl**:
+   - Gathers urls discovered in Phase 1.
+   - Filters out known Search Engine Result Pages (SERPs) and enforces domain caps.
+   - Batches URL requests to reuse Chrome instances, capturing raw body text, profile images, and screenshots.
+7. **Phase 2.5 Speculative Checks**: If a username has no associated email, candidates (e.g. `<username>@gmail.com`) are derived and checked using Holehe/Breach.
+8. **Phase 3 Targeted Crawl**: Crawls major search engines to look for newly found usernames.
+9. **Report Compilation**:
+   - [AIReportWriter](../reporters/ai_report_writer.py#L13) filters results and batches raw page text into LLM prompts.
+   - Corroborates certified ground truth facts against collected documents.
+   - Cleans the evidence log, removing duplicate SERPs and listing source reliability weights.
+   - Generates the final Markdown report file inside the target's output directory.

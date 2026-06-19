@@ -1,115 +1,59 @@
-# Step-by-Step Guide: Building a Multi-Engine Tor Search Connector
+# Tor Connector Documentation & Usage Guide
 
-This document outlines the detailed steps required to implement a robust, multi-engine Tor-based search connector.
+This document describes the design, implementation, and configuration of the Tor-based OSINT discovery system.
 
-## Step 1: Environment Setup
-Ensure you have the necessary system packages and Python libraries.
+Unlike typical script engines using simple raw sockets, the `osaa` Tor connector uses Selenium-based Chromium automation over a local SOCKS5 proxy, allowing it to navigate Javascript-heavy onion search engines, handle captcha checks, and take screenshots of evidence.
 
-1. **System Dependencies**:
-   Install Tor, `torsocks`, and `tor` controller interface.
-   ```bash
-   sudo apt update
-   sudo apt install -y tor torsocks
-   sudo systemctl enable --now tor
-   ```
+---
 
-2. **Python Dependencies**:
-   Install `PySocks`, `requests`, and `stem` (for circuit management).
-   ```bash
-   pip install PySocks requests stem
-   ```
+## Technical Design
 
-## Step 2: Advanced Implementation
-Create a new file at `osaa/connectors/tor_search.py`. This implementation includes circuit management and robust error handling.
+The Tor connector is implemented in [connectors/tor.py](../connectors/tor.py) as the [TorConnector](../connectors/tor.py#L28) class.
 
-```python
-import socks
-import socket
-import requests
-import time
-import random
-from stem import Signal
-from stem.control import Controller
-from connectors.base import BaseConnector, DiscoveryResult
+### 1. Prerequisite Verification
+- The connector executes a `pgrep tor` check via subprocess to verify that the local Tor daemon process is active. If the daemon is not running, the connector logs a warning and exits early to prevent browser connection timeouts.
 
-class TorMultiSearchConnector(BaseConnector):
-    """
-    Connector that rotates through multiple onion search engines 
-    and handles circuit rotation for anonymity.
-    """
-    
-    SEARCH_ENGINES = [
-        ("Ahmia", "http://juhanurmihxlp77detqtr6chb2k6f6j2q25q5aodq75u2nrl73r2n5ad.onion/search?q={}"),
-        ("Torch", "http://torchdeedp3i2jigzjdmfpn5wkgi4q5vspg4g5yosnylp4nup6p6w5tqd.onion/search?q={}"),
-    ]
+### 2. Driver Configuration
+- The Chromium driver is instantiated via `undetected_chromedriver` with headless flags, certificate validation bypasses, and proxy settings routed directly to the SOCKS5 proxy:
+  ```
+  --proxy-server=socks5://127.0.0.1:9050
+  ```
+- The session is wrapped using `selenium-stealth` (masking languages, browser vendor settings, and platform properties) to prevent detection by anti-bot monitors.
 
-    def _apply_proxy(self):
-        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-        socket.socket = socks.socksocket
+### 3. Dynamic Onion Search Engine Discovery
+To avoid relying on hardcoded onion links (which change frequently), the connector retrieves active search endpoints dynamically:
+- It visits directories:
+  - `https://onion.live/?category=search%20engine`
+  - `http://5n4qdkw2wavc55peppyrelmb2rgsx7ohcb2tkxhub2gyfurxulfyd3id.onion/index.php?cat=Search`
+- It extracts elements matching onion patterns and returns a list of discovered onion search engines.
 
-    def renew_circuit(self):
-        """Forces Tor to switch the exit node."""
-        try:
-            with Controller.from_port(port=9051) as controller:
-                controller.authenticate(password='your_password') # Ensure ControlPort/CookieAuth is set
-                controller.signal(Signal.NEWNYM)
-        except Exception as e:
-            print(f"Failed to renew circuit: {e}")
+### 4. Search and Capture Lifecycle
+- **Onion Engine Queries**: The connector selects the first 3 discovered search engines. It visits the engine URL, detects search text boxes using attributes (type/name matches), enters the target handle, and submits. If input boxes are not found, it falls back to a query parameter format:
+  ```
+  /search?q={target}
+  ```
+- **Global Queries**: To search anonymous search engines, the connector queries DuckDuckGo and Yandex using Tor.
+- **Verification & Storage**:
+  - The retrieved HTML body text is passed to [is_meaningful_result](../utils/result_validation.py#L15) to filter out empty search pages or bare query echoes.
+  - Valid findings are saved as raw files (`tor_{hash}.raw`) and accompanied by a desktop PNG screenshot (`tor_{hash}_screen.png`) saved inside the target output directory.
 
-    def run(self, target: str):
-        self._apply_proxy()
-        
-        all_results = []
-        for name, template in self.SEARCH_ENGINES:
-            # Randomize sleep to avoid fingerprinting
-            time.sleep(random.uniform(3, 7))
-            
-            try:
-                url = template.format(target)
-                response = requests.get(url, timeout=45)
-                
-                if response.status_code == 200:
-                    all_results.append(DiscoveryResult(
-                        source_tool=name,
-                        target_type="search",
-                        value=target,
-                        metadata={"snippet": response.text[:200]}
-                    ))
-                # Rotate circuit periodically for improved anonymity
-                if random.random() < 0.2:
-                    self.renew_circuit()
-            except Exception as e:
-                # Log error and continue to the next engine
-                continue
-                
-        return all_results
+---
+
+## Installation & Configuration
+
+### 1. Install System Dependencies
+Install the tor service daemon on Linux:
+```bash
+sudo apt update
+sudo apt install -y tor
+sudo systemctl enable --now tor
 ```
 
-## Step 3: Integration
-1. Import `TorMultiSearchConnector` in `osaa/orchestrator.py`.
-2. Add an instance of this connector to your pipeline configuration in `orchestrator.py`.
+### 2. Verify Port Routing
+The Tor daemon by default exposes a SOCKS5 proxy at `127.0.0.1:9050`. You can verify connection routing using curl:
+```bash
+curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/
+```
 
-## Step 4: Verification and Configuration
-1. **Tor Controller Access**:
-   To enable `stem` (circuit renewal), ensure `ControlPort 9051` is enabled in your `/etc/tor/torrc` file.
-   
-2. **Connectivity Test**:
-   ```bash
-   torsocks curl https://check.torproject.org
-   ```
-
-3. **Circuit Verification**:
-   Check logs to confirm your IP changes after a `renew_circuit()` call.
-
-## Best Practices
-- **Rate Limiting**: Always use randomized sleep delays to avoid detection.
-- **Circuit Maintenance**: Periodically renew the Tor circuit using `stem` to ensure different exit nodes are used for different engines.
-- **Robustness**: Always wrap engine-calls in `try/except` blocks so one engine's downtime does not crash the entire search pipeline.
-- **Configuration**: Avoid hardcoding search engine URLs if possible. Move them to a separate configuration file in `osaa/config/` for easier maintenance as `.onion` links change.
-
-## Result validation
-Onion search front-ends often render the query back on an otherwise-empty page.
-The connector gates every captured page through
-`utils.result_validation.is_meaningful_result(query, content, links)`, which
-rejects bare query echoes (content ≈ query with no surrounding text or links) so
-they never enter the evidence set.
+### 3. Webdriver Dependencies
+Ensure Google Chrome/Chromium and compatible drivers are present on the host. These are managed automatically by `undetected_chromedriver` during initialization.
