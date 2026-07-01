@@ -89,14 +89,30 @@ def run(args) -> int:
         detail = args.proxy_list if ok else f"file not found: {args.proxy_list}"
         rows.append(("Proxy list", ok, detail))
 
-    # Optional: HIBP has required a paid key for breach lookups since Nov
-    # 2021. Missing it isn't a failure (the connector just skips), so this
-    # row is always "OK" — only the detail text changes.
+    # With backend="auto" there's always a usable backend (leakcheck.io needs
+    # no key), so that case is informational rather than a pass/fail check.
+    # An explicit --breach-backend hibp without a key is a real
+    # misconfiguration though (every call will 401), so that IS a failure.
     breach_key = args.breach_api_key or os.environ.get("HIBP_API_KEY")
-    breach_detail = (
-        "configured" if breach_key else "not configured — breach checks will be skipped"
-    )
-    rows.append(("Breach lookup (HIBP)", True, breach_detail))
+    backend = args.breach_backend
+    if backend == "hibp" and not breach_key:
+        rows.append(
+            (
+                "Breach lookup",
+                False,
+                "--breach-backend hibp requested but no --breach-api-key / "
+                "HIBP_API_KEY configured — every call will fail",
+            )
+        )
+    else:
+        if backend == "auto":
+            backend = "hibp" if breach_key else "leakcheck"
+        detail = (
+            "hibp (key configured)"
+            if backend == "hibp"
+            else "leakcheck.io (free, no key required)"
+        )
+        rows.append(("Breach lookup", True, detail))
 
     width = max(len(label) for label, _, _ in rows)
     for label, ok, detail in rows:

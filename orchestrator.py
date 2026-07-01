@@ -18,6 +18,7 @@ from identity_utils import update_identity_from_results
 from identity_expander import IdentityExpander
 from models import MasterIdentity, Knowledge
 from proxy_utils import check_proxy
+from utils.cache import CacheManager
 from utils.config import load_reliability_weights
 from utils.url_filter import cap_per_domain, is_search_engine_url
 
@@ -35,6 +36,9 @@ class Orchestrator:
         max_results: int = 10,
         max_pages: int = 5,
         breach_api_key: str = None,
+        breach_backend: str = "auto",
+        use_cache: bool = False,
+        cache: "CacheManager" = None,
     ):
         self.connectors = {
             "browser": BrowserConnector(),
@@ -44,8 +48,17 @@ class Orchestrator:
             # holehe shells out to the CLI on PATH; there is no directory to pass.
             "holehe": HoleheConnector(),
             "holmes": HolmesConnector(holmes_dir or os.environ.get("HOLMES_DIR")),
-            "breach": BreachConnector(breach_api_key or os.environ.get("HIBP_API_KEY")),
+            "breach": BreachConnector(
+                breach_api_key or os.environ.get("HIBP_API_KEY"),
+                backend=breach_backend,
+            ),
         }
+        # Per-(tool, target) discovery cache — see utils/cache.py for the hit
+        # policy. Defaults OFF here (opt-in via use_cache/cache) so a bare
+        # Orchestrator() — as used throughout the test suite — never touches
+        # the real on-disk cache; main.py turns it on by default for real
+        # CLI runs (--no-cache to disable).
+        self.cache = cache if cache is not None else (CacheManager() if use_cache else None)
         self.identity = MasterIdentity()
         self.ratio = ratio
         self.knowledge = knowledge
@@ -77,7 +90,32 @@ class Orchestrator:
     async def _run_with_semaphore(
         self, name: str, connector, target: str, proxies: List[str] = None, **kwargs
     ):
-        """Runs a connector with semaphore to limit concurrency to 5."""
+        """Runs a connector with semaphore to limit concurrency to 5.
+
+        Checks the discovery cache first — a hit skips the network call and
+        the semaphore entirely — and only records *successful* fetches, never
+        errors, so a failed attempt (connector exception, proxy down, ...) is
+        retried on the next run instead of being mistaken for "already
+        scanned, found nothing". See utils/cache.py for the exact hit policy.
+        """
+        cache_key = self.cache.make_key(name, target) if self.cache else None
+        if cache_key is not None:
+            cached = self.cache.check_hit(cache_key)
+            if cached is not None:
+                logger.info(
+                    f"[cache] {name} on {target}: reusing {len(cached)} cached artifact(s)"
+                )
+                self.execution_log.append(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "tool": name,
+                        "target": target,
+                        "status": "cache_hit",
+                        "artifacts_count": len(cached),
+                    }
+                )
+                return cached
+
         async with self.semaphore:
             try:
                 if name == "browser":
@@ -97,6 +135,8 @@ class Orchestrator:
                         ),
                     }
                 )
+                if cache_key is not None and isinstance(result, list):
+                    self.cache.record_success(cache_key, result)
                 return result
             except Exception as e:
                 self.execution_log.append(
@@ -109,6 +149,7 @@ class Orchestrator:
                     }
                 )
                 logger.error(f"[x] {name} on {target}: {e}")
+                # Not cached on purpose — see the docstring above.
                 return []
 
     def plan(self, targets: List[Dict[str, str]]) -> List[Dict]:

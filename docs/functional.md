@@ -44,7 +44,17 @@ python3 [main.py](../main.py) run --username target_handle --name "Jane Doe" --a
 - `--ai-endpoint` (`run`/`doctor`): Endpoint URL overrides for persistent LLM servers.
 - `--proxy-list`: Path to a file containing newline-separated SOCKS5 or HTTP proxies formatted as `ip:port`. Validated to exist at parse time.
 - `--tookie-dir` / `--holmes-dir`: Path to the Tookie-OSINT / MrHolmes checkouts (falls back to `TOOKIE_DIR` / `HOLMES_DIR` env vars, then a sibling directory next to `osaa/`). holehe has no directory to configure — it shells out to the `holehe` console script on `PATH`.
-- `--breach-api-key`: Have I Been Pwned API key (falls back to `HIBP_API_KEY`). HIBP has required a paid key for breach lookups since Nov 2021; without one, [BreachConnector](../connectors/breach.py) skips cleanly instead of running.
+- `--breach-api-key`: Have I Been Pwned API key (falls back to `HIBP_API_KEY`). HIBP has required a paid key for breach lookups since Nov 2021.
+- `--breach-backend {auto,hibp,leakcheck}`: Which breach backend [BreachConnector](../connectors/breach.py) uses. `auto` (default) uses HIBP if a key is configured, otherwise falls back to leakcheck.io's free public endpoint (no key required, but less curated — hits from it carry a lower confidence score than HIBP hits).
+- `--no-cache`: Disable the per-(tool, target) discovery cache (see "Discovery Cache" below).
+
+### Discovery Cache
+
+[CacheManager](../utils/cache.py) persists each connector's per-target result in `osaa/database/cache.sqlite`, checked by [Orchestrator._run_with_semaphore](../orchestrator.py) before any network call:
+
+- **Pertinent (non-empty) results** are cached indefinitely and always served from cache for the same (tool, target) pair — no re-fetch, no duplicate artifacts.
+- **Legitimately empty results** are cached as negative for 1 day; a lookup within that window is a hit, after which the target is eligible for a fresh scan.
+- **Errors** (connector exception, proxy down, timeout) are never written to the cache, so a failed attempt is always retried on the next run rather than being mistaken for "already scanned, found nothing".
 - `--max-results`: Max results the [SearchConnector](../connectors/searcher.py) fetches per dork query (default `10`). The unquoted fallback query uses half this value.
 - `--max-pages`: Max pages crawled per domain by the [BrowserConnector](../connectors/browser.py), and max onion search engines tried per target by the [TorConnector](../connectors/tor.py) (default `5`).
 - `--knowledge-file`: Path to a structured JSON file containing certified target details. Validated to exist at parse time.

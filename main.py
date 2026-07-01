@@ -88,7 +88,16 @@ def _build_parser():
     cred_g.add_argument(
         "--breach-api-key",
         help="Have I Been Pwned API key for breach lookups (env: HIBP_API_KEY). "
-        "Without one, breach checks are skipped.",
+        "Without one, breach checks automatically use the free leakcheck.io "
+        "backend instead (see --breach-backend).",
+    )
+    cred_g.add_argument(
+        "--breach-backend",
+        choices=["auto", "hibp", "leakcheck"],
+        default="auto",
+        help="Which breach-lookup backend to use: 'hibp' (needs "
+        "--breach-api-key), 'leakcheck' (free, no key, less curated), or "
+        "'auto' — hibp if a key is configured, else leakcheck (default: auto)",
     )
 
     discovery = argparse.ArgumentParser(add_help=False)
@@ -118,6 +127,14 @@ def _build_parser():
         help="Max pages crawled per domain by the browser connector, and max "
         "onion search engines tried per target by the Tor connector "
         "(default: 5)",
+    )
+    disc_g.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the per-target discovery cache (always re-fetch). By "
+        "default, a target already scanned by a connector is skipped on "
+        "later runs if it found results, or if it found nothing less than a "
+        "day ago; a run that errored is always retried.",
     )
 
     ai = argparse.ArgumentParser(add_help=False)
@@ -214,6 +231,8 @@ def cmd_plan(args) -> int:
         max_results=args.max_results,
         max_pages=args.max_pages,
         breach_api_key=args.breach_api_key,
+        breach_backend=args.breach_backend,
+        use_cache=not args.no_cache,
     )
 
     print("[*] Execution plan (no network I/O):")
@@ -256,6 +275,8 @@ async def cmd_run(args) -> int:
         max_results=args.max_results,
         max_pages=args.max_pages,
         breach_api_key=args.breach_api_key,
+        breach_backend=args.breach_backend,
+        use_cache=not args.no_cache,
     )
     for key, val in target.items():
         if not val:
