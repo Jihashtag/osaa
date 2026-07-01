@@ -86,6 +86,7 @@ class BrowserConnector(BaseConnector):
                 options.add_argument(f"--proxy-server={proxy[8:]}")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         driver = uc.Chrome(
+            version_main=149,
             options=options,
             # user_data_dir="cookie_folder",
             keep_alive=False,

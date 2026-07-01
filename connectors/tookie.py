@@ -16,7 +16,11 @@ class TookieConnector(BaseConnector):
             BASE_DIR = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
-            self.tookie_dir = os.path.join(BASE_DIR, "python_tookie")
+            # Matches the clone destination in setup_all.sh ("python_toolkie").
+            # A prior "python_tookie" (missing the "l") never matched an actual
+            # checkout, so this connector silently no-op'd for anyone relying
+            # on the default instead of setting TOOKIE_DIR explicitly.
+            self.tookie_dir = os.path.join(BASE_DIR, "python_toolkie")
         else:
             self.tookie_dir = tookie_dir
 

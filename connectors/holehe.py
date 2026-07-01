@@ -9,16 +9,10 @@ from connectors.base import BaseConnector, DiscoveryResult
 
 
 class HoleheConnector(BaseConnector):
-    """Connector for the holehe OSINT tool."""
+    """Connector for the holehe OSINT tool.
 
-    def __init__(self, holehe_dir: str = None):
-        if holehe_dir is None:
-            BASE_DIR = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-            self.holehe_dir = os.path.join(BASE_DIR, "docker_holehe")
-        else:
-            self.holehe_dir = holehe_dir
+    Shells out to the ``holehe`` console script installed on PATH (pip
+    package), not a checkout on disk — there is no directory to configure."""
 
     @property
     def supported_types(self) -> List[str]:

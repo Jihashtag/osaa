@@ -30,9 +30,13 @@ The `osaa` tool is a recursive, modular OSINT fusion engine designed for local i
      default `http://localhost:11434`) and `lms-server` (LM Studio
      OpenAI-compatible server, default `http://localhost:1234`). Override the
      URL with `--ai-endpoint`.
-   - **Model quality**: a 1B model is too weak for analysis. Defaults are now a
-     ~4B local model (`google/gemma-3n-e4b` for LM Studio). Override with
-     `--model`; use a smaller one if you need speed over depth.
+   - **Model quality**: a 1B model is too weak for analysis. Defaults are now
+     the ~4B Gemma 3n E4B model on both backends (`google/gemma-3n-e4b` for LM
+     Studio, `gemma3n:e4b` for Ollama). Override with `--model`; use a smaller
+     one if you need speed over depth.
+   - Run `python3 main.py doctor` before a real investigation — it checks the
+     configured AI backend, Tor, and tool paths are actually reachable, so a
+     misconfiguration surfaces immediately instead of an hour into a run.
 
 ## Usage
 
@@ -46,19 +50,30 @@ await orch.run_full_pipeline(targets)
 ```
 
 ### CLI Execution
-```bash
-python3 main.py --username target_user
+The CLI is split into three subcommands: `run` (execute the pipeline and write
+a report), `plan` (print the execution plan with no network I/O — replaces the
+old `--dry-run` flag), and `doctor` (pre-flight check of backends/tool paths).
+At least one of `--username`/`--name`/`--email` is required for `run`/`plan`.
 
-# Free-text knowledge + a fast persistent backend, preview the plan first:
-python3 main.py --username target_user --name "Jane Doe" \
+```bash
+python3 main.py doctor
+
+python3 main.py plan --username target_user
+
+# Free-text knowledge + a fast persistent backend:
+python3 main.py run --username target_user --name "Jane Doe" \
   --knowledge "French medical student in Lille, ~20s" \
-  --ai-agent ollama-http --dry-run
+  --ai-agent ollama-http
 ```
-Flags: `--name`, `--email`, `--ratio`, `--proxy_list`,
-`--knowledge-file` / `--knowledge "<text>"`,
-`--ai-agent {lms,ollama,gemini,ollama-http,lms-server}`, `--model`,
-`--ai-endpoint`, `--debug`, `--dry-run` (print the execution plan and exit
-without any network I/O).
+
+Common flags: `--name`, `--email`, `--ratio` (must be within `(0, 1]`),
+`--proxy-list`, `--knowledge-file` / `--knowledge "<text>"`,
+`--tookie-dir` / `--holmes-dir` (or `TOOKIE_DIR` / `HOLMES_DIR` env vars),
+`--debug`.
+`run`/`doctor`-only: `--ai-agent {lms,ollama,gemini,ollama-http,lms-server}`,
+`--model`, `--ai-endpoint`.
+`run`-only: `--output <dir>` (where to write the report + artifacts) and
+`--force` (overwrite an existing report at that location).
 
 ## Testing
 

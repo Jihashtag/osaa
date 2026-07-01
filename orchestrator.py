@@ -5,7 +5,6 @@ import time
 from datetime import datetime
 
 from logger import get_logger
-from random import shuffle
 from typing import Dict, List
 
 from connectors.browser import BrowserConnector
@@ -19,20 +18,29 @@ from identity_utils import update_identity_from_results
 from identity_expander import IdentityExpander
 from models import MasterIdentity, Knowledge
 from proxy_utils import check_proxy
+from utils.config import load_reliability_weights
 from utils.url_filter import cap_per_domain, is_search_engine_url
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
 
 class Orchestrator:
-    def __init__(self, proxies: List[str] = None, knowledge: Knowledge = None, ratio: float = 0.33):
+    def __init__(
+        self,
+        proxies: List[str] = None,
+        knowledge: Knowledge = None,
+        ratio: float = 0.33,
+        tookie_dir: str = None,
+        holmes_dir: str = None,
+    ):
         self.connectors = {
             "browser": BrowserConnector(),
             "tor": TorConnector(),
             "search": SearchConnector(),
-            "tookie": TookieConnector(os.environ.get("TOOKIE_DIR", None)),
-            "holehe": HoleheConnector(os.environ.get("HOLEHE_DIR", None)),
-            "holmes": HolmesConnector(os.environ.get("HOLMES_DIR", None)),
+            "tookie": TookieConnector(tookie_dir or os.environ.get("TOOKIE_DIR")),
+            # holehe shells out to the CLI on PATH; there is no directory to pass.
+            "holehe": HoleheConnector(),
+            "holmes": HolmesConnector(holmes_dir or os.environ.get("HOLMES_DIR")),
             "breach": BreachConnector(),
         }
         self.identity = MasterIdentity()
@@ -51,6 +59,12 @@ class Orchestrator:
         self._blocked_domains: set = set()
         # Max result URLs to visit per domain (generous: maximise results).
         self.max_urls_per_domain = 5
+        # source_tool reliability weights, used to rank discovered URLs so a
+        # ratio-based cap drops the *weakest* candidates instead of a random
+        # sample of them (see _score_url).
+        self._source_weights = load_reliability_weights() or {}
+        # Best (confidence, source reliability) seen per URL this run.
+        self._url_scores: Dict[str, float] = {}
 
     async def _run_with_semaphore(
         self, name: str, connector, target: str, proxies: List[str] = None, **kwargs
@@ -91,7 +105,7 @@ class Orchestrator:
 
     def plan(self, targets: List[Dict[str, str]]) -> List[Dict]:
         """Return the execution plan (which connectors would run per target)
-        without performing any network I/O. Backs ``--dry-run``."""
+        without performing any network I/O. Backs ``osaa plan``."""
         plan = []
         for target in targets:
             t_type = target.get("type")
@@ -211,18 +225,31 @@ class Orchestrator:
         self._proxy_last_checked = time.monotonic()
         logger.info(f"[*] {len(self.working_proxies)} working proxies found.")
 
+    def _record_url_score(self, url: str, confidence: float, source_tool: str) -> None:
+        """Tracks the best (confidence * source-reliability) score seen for a
+        URL this run, so it can be ranked instead of randomly sampled when the
+        ratio cap forces us to drop candidates."""
+        score = float(confidence or 1.0) * self._source_weights.get(source_tool, 0.5)
+        if score > self._url_scores.get(url, -1.0):
+            self._url_scores[url] = score
+
     async def run_full_pipeline(
         self, targets: List[Dict[str, str]], knowledge: Knowledge = None
     ):
         if knowledge:
             self.knowledge = knowledge
         self._blocked_domains = set()  # fresh per run
+        self._url_scores = {}
         self.connectors["browser"].set_targets(targets)
         browser = self.connectors["browser"]
         i = 0
         len_target = len(targets)
         # Ensure we process at least the first targets if the list is small
         ratio = max(3, int(len_target * self.ratio))
+        print(
+            f"[*] Discovery: {len_target} target(s) queued, processing the top "
+            f"{min(ratio, len_target)} (ratio={self.ratio})"
+        )
 
         for target in targets:
             i += 1
@@ -254,6 +281,10 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"[x] {name} on {target_val}: {e}")
                     continue
+            print(
+                f"[*] ({i}/{min(ratio, len_target)}) {t_type}:{target_val} — "
+                f"dispatching {len(tasks)} connector(s)"
+            )
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for res in results:
                 if not isinstance(res, list):
@@ -265,9 +296,10 @@ class Orchestrator:
                 self.identity.raw_artifacts.extend(
                     r for r in res if r.target_type != "url"
                 )
-                self.identity.discovered_urls.extend(
-                    r.value for r in res if r.target_type == "url"
-                )
+                for r in res:
+                    if r.target_type == "url":
+                        self.identity.discovered_urls.append(r.value)
+                        self._record_url_score(r.value, r.confidence, r.source_tool)
 
             # Force garabage collection as tools are used in way that might be unattended
             gc.collect()
@@ -278,13 +310,17 @@ class Orchestrator:
             # to a few URLs per domain so one domain can't dominate the budget.
             urls = [u for u in urls if not is_search_engine_url(u)]
             urls = cap_per_domain(urls, n=self.max_urls_per_domain)
-            # TODO : Order by pertinence (similarities with default identity ?)
-            shuffle(urls)
+            # Best evidence first: a ratio cap below then drops the *weakest*
+            # candidates instead of a random sample of them (previously
+            # shuffle()'d, which could just as easily discard the best hits).
+            urls.sort(key=lambda u: self._url_scores.get(u, 0.5), reverse=True)
             ratio_browser = len(urls) * self.ratio
 
             if i > 3:
                 urls = urls[: int(ratio_browser)]
 
+            if urls:
+                print(f"[*]   browsing {len(urls)} discovered URL(s)...")
             await self._update_working_proxies()
             self.identity.raw_artifacts.extend(await self._browse_urls(browser, urls))
 
@@ -294,11 +330,14 @@ class Orchestrator:
             gc.collect()
 
         # 2.5 Speculative account-existence checks on usernames lacking an email.
+        print("[*] Speculative account checks on username-only identities...")
         await self._run_speculative_account_checks()
 
         await self._update_working_proxies()
         # 3. Browser again but now search specific usernames for additional info.
         usernames = list(set([a.value for a in self.identity.username]))
+        print(f"[*] Final pass: browsing {len(usernames)} known username(s)...")
         self.identity.raw_artifacts.extend(await self._browse_urls(browser, usernames))
         # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
         gc.collect()
+        print("[*] Discovery pipeline complete.")

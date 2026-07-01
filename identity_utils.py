@@ -14,6 +14,41 @@ from connectors.base import DiscoveryResult
 from path_utils import get_report_dir
 from models import IdentityAnchor
 from blocklist import is_local_noise
+from fusion_engine import FusionEngine
+
+# The Probabilistic Identity Fusion Engine was implemented (and unit-tested in
+# tests/test_fusion_engine.py) but never actually wired into the pipeline —
+# every anchor was deduplicated by exact string match only. That let obvious
+# variants of the same handle/email (case, punctuation, minor typos across
+# tools) pile up as separate, unlinked anchors instead of being merged into
+# one higher-confidence anchor, which is exactly the "not pertinent" noise in
+# the final report.
+_fusion_engine = FusionEngine()
+
+
+def _merge_or_append(anchors: List[IdentityAnchor], res: DiscoveryResult) -> None:
+    """Adds ``res.value`` as a new anchor, or — if it's a probable variant of
+    an anchor already present — merges into that anchor instead."""
+    existing = [a.value for a in anchors]
+    if res.value in existing:
+        return  # exact duplicate: nothing to add or merge
+
+    best_anchor, best_prob = None, 0.0
+    for anchor in anchors:
+        prob = _fusion_engine.calculate_link_probability(
+            res.value, anchor, res.source_tool
+        )
+        if _fusion_engine.is_link_valid(prob) and prob > best_prob:
+            best_anchor, best_prob = anchor, prob
+
+    if best_anchor is not None:
+        best_anchor.aggregate_confidence = max(
+            best_anchor.aggregate_confidence, res.confidence
+        )
+    else:
+        anchors.append(
+            IdentityAnchor(value=res.value, aggregate_confidence=res.confidence)
+        )
 
 
 def update_identity_from_results(identity, results: List[DiscoveryResult]):
@@ -31,17 +66,9 @@ def update_identity_from_results(identity, results: List[DiscoveryResult]):
         if res.value and is_local_noise(res.value):
             continue
         if res.target_type == "email":
-            existing = [a.value for a in identity.email]
-            if res.value not in existing:
-                identity.email.append(
-                    IdentityAnchor(value=res.value, aggregate_confidence=res.confidence)
-                )
+            _merge_or_append(identity.email, res)
         elif res.target_type == "username":
-            existing = [a.value for a in identity.username]
-            if res.value not in existing:
-                identity.username.append(
-                    IdentityAnchor(value=res.value, aggregate_confidence=res.confidence)
-                )
+            _merge_or_append(identity.username, res)
         elif res.target_type in ["url", "query"]:
             if res.value not in identity.discovered_urls:
                 identity.discovered_urls.append(res.value)

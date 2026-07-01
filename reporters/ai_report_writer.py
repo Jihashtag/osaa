@@ -70,6 +70,7 @@ class AIReportWriter:
             chunk = records[start : start + batch_size]
             res = await self.analyst.analyze(
                 f"""\n\nAnalyze the following {len(chunk)} OSINT artifact(s) and, for EACH, extract every element/data/information related to {self.potential_identities} and judge whether it is the same or a different person.
+
 Return a JSON ARRAY with one object per artifact, in order. For an artifact with insufficient data, return an object with a single key "error".
 Answer example:
 <example>
@@ -86,6 +87,15 @@ Artifacts:
 """,
                 knowledge=knowledge,
             )
+            if isinstance(res, dict) and "error" in res and len(res) == 1:
+                # The whole batch failed at the backend level (unreachable
+                # server, timeout, bad model) rather than a per-artifact
+                # parsing issue — this is worth the user's attention now,
+                # not just buried later as "no data" in the report.
+                logger.warning(
+                    f"[!] AI backend error while sanitizing artifacts: {res['error']}"
+                )
+                continue
             for parsed in self._coerce_array(res, len(chunk)):
                 if isinstance(parsed, dict) and "error" not in parsed and parsed:
                     sanitized.append(parsed)
@@ -113,6 +123,13 @@ Artifacts:
         try:
             full_prompt = f"{prompt}\n\nINSTRUCTIONS: Clearly separate verified facts from analytical assumptions. Ensure we mention the sources when available.\n**Return a JSON with ONLY the key '{normalized_key}'**."
             response = await self.analyst.analyze(full_prompt, knowledge=knowledge)
+            if isinstance(response, dict) and "error" in response:
+                # Surface backend failures immediately instead of letting them
+                # sit silently inside the generated Markdown until read later.
+                logger.warning(
+                    f"[!] AI backend error while generating '{section_name}': {response['error']}"
+                )
+                return f"_Section unavailable — AI backend error: {response['error']}_"
             if isinstance(response, dict) and normalized_key in response:
                 return response[normalized_key]
             if isinstance(response, dict) and response:
@@ -120,6 +137,7 @@ Artifacts:
                 return "\n".join(str(v) for v in response.values())
             return f"Section {section_name} generation failed."
         except Exception as e:
+            logger.warning(f"[!] Exception generating '{section_name}': {e}")
             return f"Section {section_name} error: {e}"
 
     @staticmethod

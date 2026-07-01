@@ -55,7 +55,10 @@ class TorConnector(BaseConnector):
         options.add_argument("--proxy-server=socks5://127.0.0.1:9050")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
-        driver = uc.Chrome(options=options)
+        driver = uc.Chrome(
+            version_main=149,
+            options=options
+        )
         stealth(
             driver,
             languages=["en-US", "en"],

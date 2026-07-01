@@ -40,11 +40,13 @@ class AIAnalyst:
 
     def _get_default_model(self, agent_type: str) -> str:
         # A 1B model is too weak for intelligence analysis; default to a ~4B
-        # local model for quality (override with --model for speed).
+        # local model for quality (override with --model for speed). Same
+        # model family (Gemma 3n E4B) on both local backends so behavior
+        # doesn't silently change with --ai-agent alone.
         if agent_type in ("lms", "lms-server"):
             return "google/gemma-3n-e4b"
         elif agent_type in ("ollama", "ollama-http"):
-            return "llama3.2:1b"
+            return "gemma3n:e4b"
         elif agent_type == "gemini":
             return "gemini-2.0-flash"
         return "default"
