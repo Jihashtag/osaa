@@ -34,6 +34,7 @@ class Orchestrator:
         holmes_dir: str = None,
         max_results: int = 10,
         max_pages: int = 5,
+        breach_api_key: str = None,
     ):
         self.connectors = {
             "browser": BrowserConnector(),
@@ -43,7 +44,7 @@ class Orchestrator:
             # holehe shells out to the CLI on PATH; there is no directory to pass.
             "holehe": HoleheConnector(),
             "holmes": HolmesConnector(holmes_dir or os.environ.get("HOLMES_DIR")),
-            "breach": BreachConnector(),
+            "breach": BreachConnector(breach_api_key or os.environ.get("HIBP_API_KEY")),
         }
         self.identity = MasterIdentity()
         self.ratio = ratio

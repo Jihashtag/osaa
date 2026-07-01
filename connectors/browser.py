@@ -52,12 +52,9 @@ def response_checker(perfLog: any) -> bool:
         if response < 200 or response >= 408 or response == 404:
             return False
         if response > 303:
-            # It might be that we are blocked by bot control
-            # 400 / 401 / 403 / 402? should be handled like by retrying with threshold ?
-            # Or maybe an AI filling captcha ?
-            # Or we use the screenshot to click / fill captcha ?
-            # Or we simulate random mouse movement on every requests to make it "humany"
-            # Or all of the above ... Anyway it's an improvement to try
+            # 4xx/5xx beyond 303: likely a bot-block response rather than
+            # real content. The caller (_visit/_content_checker) already
+            # retries once via _handle_captcha before giving up on the page.
             return False
     return True
 
@@ -123,8 +120,8 @@ class BrowserConnector(BaseConnector):
 
             if is_bot_block(driver.current_url, content):
                 logger.error(f"[x] Browser - {driver.current_url} was spotted")
-                # We were spotted as a robot.
-                # Todo : Retry with firefox and/or ipv4/ipv6
+                # We were spotted as a robot — try clearing the captcha once
+                # and recheck before giving up on this page.
                 self._handle_captcha(driver)
                 sleep(random.uniform(3, 5))
                 body = driver.find_element(By.TAG_NAME, "body")

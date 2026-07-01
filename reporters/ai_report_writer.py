@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 from utils.config import load_reliability_weights
 from utils.url_filter import is_search_engine_url, registered_domain
 from reporters.corroboration import assess
+from reporters.review_engine import ReviewEngine
 
 logger = get_logger(__name__, debug=os.getenv("DEBUG", "False") == "True")
 
@@ -214,6 +215,22 @@ Artifacts:
             )
         return table
 
+    @staticmethod
+    def _generate_audit_section(identity: Any) -> str:
+        """Runs ReviewEngine over the fused identity and renders its
+        findings — distinct anchors that didn't get merged, low-confidence
+        anchors — so an analyst sees them instead of the report silently
+        treating every anchor as equally certain."""
+        report = ReviewEngine().audit(identity)
+        if not report["warnings"]:
+            return (
+                f"Status: {report['status']} — no conflicts detected across "
+                f"{report['artifact_count']} identity anchor(s)."
+            )
+        lines = [f"Status: {report['status']}", ""]
+        lines.extend(f"- {w}" for w in report["warnings"])
+        return "\n".join(lines)
+
     async def generate_report(
         self, target: str, identity: Any, knowledge: Any = None
     ) -> str:
@@ -228,6 +245,7 @@ Artifacts:
         )
         evidence_table = self._generate_evidence_table(identity.raw_artifacts)
         corroboration_table = self._generate_corroboration_table(identity, knowledge)
+        audit_section = self._generate_audit_section(identity)
 
         summary = await self._generate_section(
             "Summary",
@@ -248,5 +266,6 @@ Artifacts:
             f"## 1. Summary\n{summary}\n\n"
             f"## 2. Profiling\n{profiling_data}\n\n"
             f"## 2.1 Knowledge Corroboration\n{corroboration_table}\n\n"
+            f"## 2.2 Data Quality Audit\n{audit_section}\n\n"
             f"## 3. Evidence Log\n{evidence_table}"
         )

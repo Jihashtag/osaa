@@ -12,6 +12,8 @@ The `osaa` tool is a recursive, modular OSINT fusion engine designed for local i
     - **`TorConnector` & `BrowserConnector`**: Support for deep web scraping and headless browser automation.
 - **`FusionEngine`**: Probabilistic Identity Fusion Engine (`osaa/fusion_engine.py`). Implements similarity-based linking using `rapidfuzz` and source reliability weighting.
 - **`KnowledgeSystem`**: Certified Truth base (`osaa/knowledge_loader.py`). Anchors LLM analysis to verified target data to prevent hallucinations.
+- **`BreachConnector`**: Checks Have I Been Pwned for known breaches on an email (`osaa/connectors/breach.py`). Requires `--breach-api-key` / `HIBP_API_KEY`; skips cleanly without one.
+- **`ReviewEngine`**: Data-quality audit (`osaa/reporters/review_engine.py`). Flags unmerged distinct anchors and low-confidence findings in the "Data Quality Audit" report section.
 - **`AIAnalyst`**: Provides local AI inference by auto-detecting `gemini` CLI, `LM Studio`, or `Ollama`.
 - **`MasterIdentity`**: The unified data structure representing the investigated subject.
 
@@ -69,6 +71,8 @@ python3 main.py run --username target_user --name "Jane Doe" \
 Common flags: `--name`, `--email`, `--ratio` (must be within `(0, 1]`),
 `--proxy-list`, `--knowledge-file` / `--knowledge "<text>"`,
 `--tookie-dir` / `--holmes-dir` (or `TOOKIE_DIR` / `HOLMES_DIR` env vars),
+`--breach-api-key` (or `HIBP_API_KEY` env var — without one, breach checks
+are skipped rather than run),
 `--max-results <n>` (results fetched per search query, default `10`),
 `--max-pages <n>` (pages crawled per domain by the browser, and onion search
 engines tried per target by Tor, default `5`), `--debug`.

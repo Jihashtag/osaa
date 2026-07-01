@@ -89,6 +89,15 @@ def run(args) -> int:
         detail = args.proxy_list if ok else f"file not found: {args.proxy_list}"
         rows.append(("Proxy list", ok, detail))
 
+    # Optional: HIBP has required a paid key for breach lookups since Nov
+    # 2021. Missing it isn't a failure (the connector just skips), so this
+    # row is always "OK" — only the detail text changes.
+    breach_key = args.breach_api_key or os.environ.get("HIBP_API_KEY")
+    breach_detail = (
+        "configured" if breach_key else "not configured — breach checks will be skipped"
+    )
+    rows.append(("Breach lookup (HIBP)", True, breach_detail))
+
     width = max(len(label) for label, _, _ in rows)
     for label, ok, detail in rows:
         status = "OK" if ok else "MISSING"

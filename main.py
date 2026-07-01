@@ -84,6 +84,12 @@ def _build_parser():
     tool_g.add_argument(
         "--holmes-dir", help="Path to the MrHolmes checkout (env: HOLMES_DIR)"
     )
+    cred_g = tool_dirs.add_argument_group("credentials")
+    cred_g.add_argument(
+        "--breach-api-key",
+        help="Have I Been Pwned API key for breach lookups (env: HIBP_API_KEY). "
+        "Without one, breach checks are skipped.",
+    )
 
     discovery = argparse.ArgumentParser(add_help=False)
     disc_g = discovery.add_argument_group("discovery tuning")
@@ -207,6 +213,7 @@ def cmd_plan(args) -> int:
         holmes_dir=args.holmes_dir,
         max_results=args.max_results,
         max_pages=args.max_pages,
+        breach_api_key=args.breach_api_key,
     )
 
     print("[*] Execution plan (no network I/O):")
@@ -248,6 +255,7 @@ async def cmd_run(args) -> int:
         holmes_dir=args.holmes_dir,
         max_results=args.max_results,
         max_pages=args.max_pages,
+        breach_api_key=args.breach_api_key,
     )
     for key, val in target.items():
         if not val:
