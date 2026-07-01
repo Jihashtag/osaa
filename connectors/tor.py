@@ -100,7 +100,9 @@ class TorConnector(BaseConnector):
         engines = list(set(engines))
         return engines
 
-    async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
+    async def run(
+        self, target: str, max_pages: int = 3, **kwargs
+    ) -> List[DiscoveryResult]:
         from path_utils import get_report_dir
 
         self.res_dir = get_report_dir()
@@ -121,7 +123,7 @@ class TorConnector(BaseConnector):
             engines = await self._search_engine_discovery(driver)
 
             # Step 2: Search on each engine
-            for engine_url in engines[:3]:  # Limit to first 3 to avoid infinite loop
+            for engine_url in engines[:max_pages]:  # capped by --max-pages
                 try:
                     logger.info(f"[*] Tor - Searching on {engine_url}")
                     driver.get(engine_url)

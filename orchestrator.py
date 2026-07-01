@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from logger import get_logger
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from connectors.browser import BrowserConnector
 from connectors.tor import TorConnector
@@ -32,6 +32,8 @@ class Orchestrator:
         ratio: float = 0.33,
         tookie_dir: str = None,
         holmes_dir: str = None,
+        max_results: int = 10,
+        max_pages: int = 5,
     ):
         self.connectors = {
             "browser": BrowserConnector(),
@@ -57,8 +59,13 @@ class Orchestrator:
         self._proxy_last_checked = 0.0
         # Domains that bot-blocked us this run; the browser backs off from them.
         self._blocked_domains: set = set()
-        # Max result URLs to visit per domain (generous: maximise results).
-        self.max_urls_per_domain = 5
+        # --max-results: how many hits the SearchConnector asks DDGS for per
+        # dork query.
+        self.max_results = max_results
+        # --max-pages: how many pages get crawled per domain by the browser,
+        # and how many onion search engines the Tor connector visits per
+        # target (generous default: maximise results).
+        self.max_pages = max_pages
         # source_tool reliability weights, used to rank discovered URLs so a
         # ratio-based cap drops the *weakest* candidates instead of a random
         # sample of them (see _score_url).
@@ -119,6 +126,14 @@ class Orchestrator:
             ]
             plan.append({"type": t_type, "value": val, "connectors": names})
         return plan
+
+    def _connector_kwargs(self, name: str) -> Dict[str, Any]:
+        """Extra per-connector kwargs derived from --max-results/--max-pages."""
+        if name == "search":
+            return {"max_results": self.max_results}
+        if name == "tor":
+            return {"max_pages": self.max_pages}
+        return {}
 
     async def _browse_urls(self, browser, urls: List[str]) -> List:
         """Browse a set of URLs, reusing one Chrome per proxy chunk (or one for
@@ -275,7 +290,11 @@ class Orchestrator:
                             await self._update_working_proxies()
                         tasks.append(
                             self._run_with_semaphore(
-                                name, connector, target_val, self.working_proxies
+                                name,
+                                connector,
+                                target_val,
+                                self.working_proxies,
+                                **self._connector_kwargs(name),
                             )
                         )
                 except Exception as e:
@@ -309,7 +328,7 @@ class Orchestrator:
             # Drop search-engine result pages (not evidence) and bound the crawl
             # to a few URLs per domain so one domain can't dominate the budget.
             urls = [u for u in urls if not is_search_engine_url(u)]
-            urls = cap_per_domain(urls, n=self.max_urls_per_domain)
+            urls = cap_per_domain(urls, n=self.max_pages)
             # Best evidence first: a ratio cap below then drops the *weakest*
             # candidates instead of a random sample of them (previously
             # shuffle()'d, which could just as easily discard the best hits).

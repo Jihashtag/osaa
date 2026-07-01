@@ -19,7 +19,11 @@ class SearchConnector(BaseConnector):
         return ["query", "username", "email", "fullname"]
 
     async def run(
-        self, target: str, proxies: List[str] = None, **kwargs
+        self,
+        target: str,
+        proxies: List[str] = None,
+        max_results: int = 10,
+        **kwargs,
     ) -> List[DiscoveryResult]:
         dorks = (
             [
@@ -38,7 +42,7 @@ class SearchConnector(BaseConnector):
         )
 
         if not proxies:
-            return await self._run_dorks(dorks, None)
+            return await self._run_dorks(dorks, None, max_results)
 
         # Split dorks among proxies
         num_proxies = len(proxies)
@@ -51,7 +55,7 @@ class SearchConnector(BaseConnector):
         for idx, chunk in enumerate(dork_chunks):
             # Rotate proxies if more chunks than proxies
             proxy = proxies[idx % num_proxies]
-            tasks.append(self._run_dorks(chunk, proxy))
+            tasks.append(self._run_dorks(chunk, proxy, max_results))
 
         results = await asyncio.gather(*tasks)
         # Flatten then deduplicate by URL across all dorks/proxies.
@@ -112,7 +116,13 @@ class SearchConnector(BaseConnector):
                 ddgs.text(query, safesearch="off", max_results=max_results)
             )
 
-    async def _run_dorks(self, dorks: List[str], proxy: str) -> List[DiscoveryResult]:
+    async def _run_dorks(
+        self, dorks: List[str], proxy: str, max_results: int = 10
+    ) -> List[DiscoveryResult]:
+        # The broader, unquoted fallback is intentionally narrower than the
+        # primary query so a --max-results bump doesn't blow up the fallback
+        # path just as much (it's already lower-confidence per hit).
+        fallback_max = max(1, max_results // 2)
         results = []
         for query in dorks:
             # Exact, quoted dorks are higher-signal than the unquoted fallback.
@@ -123,7 +133,9 @@ class SearchConnector(BaseConnector):
                     # Jitter to avoid rate-limiting, without blocking the loop.
                     await asyncio.sleep(random.uniform(3, 5))
                     kwargs = self._build_query_kwargs(proxy)
-                    res = await asyncio.to_thread(self._ddgs_text, kwargs, query, 10)
+                    res = await asyncio.to_thread(
+                        self._ddgs_text, kwargs, query, max_results
+                    )
                     results.extend(self._rows_to_results(res, query, confidence))
                     # A clean (even empty) response means no transient error;
                     # stop retrying and let the fallback handle empties.
@@ -141,7 +153,7 @@ class SearchConnector(BaseConnector):
                     logger.info(f"[*] Falling back to broader query for {query}")
                     kwargs = self._build_query_kwargs(proxy)
                     res = await asyncio.to_thread(
-                        self._ddgs_text, kwargs, query.replace('"', ""), 5
+                        self._ddgs_text, kwargs, query.replace('"', ""), fallback_max
                     )
                     results.extend(self._rows_to_results(res, query, 0.4))
                 except Exception as e:

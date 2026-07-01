@@ -44,6 +44,8 @@ python3 [main.py](../main.py) run --username target_handle --name "Jane Doe" --a
 - `--ai-endpoint` (`run`/`doctor`): Endpoint URL overrides for persistent LLM servers.
 - `--proxy-list`: Path to a file containing newline-separated SOCKS5 or HTTP proxies formatted as `ip:port`. Validated to exist at parse time.
 - `--tookie-dir` / `--holmes-dir`: Path to the Tookie-OSINT / MrHolmes checkouts (falls back to `TOOKIE_DIR` / `HOLMES_DIR` env vars, then a sibling directory next to `osaa/`). holehe has no directory to configure — it shells out to the `holehe` console script on `PATH`.
+- `--max-results`: Max results the [SearchConnector](../connectors/searcher.py) fetches per dork query (default `10`). The unquoted fallback query uses half this value.
+- `--max-pages`: Max pages crawled per domain by the [BrowserConnector](../connectors/browser.py), and max onion search engines tried per target by the [TorConnector](../connectors/tor.py) (default `5`).
 - `--knowledge-file`: Path to a structured JSON file containing certified target details. Validated to exist at parse time.
 - `--knowledge`: Raw text metadata describing context about the target.
 - `--output` (`run`): Directory to write the report and artifacts to (default: `./Report_<target>_resources`).

@@ -35,6 +35,16 @@ def _existing_file(value: str) -> str:
     return value
 
 
+def _positive_int(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"must be an integer, got {value!r}")
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {n}")
+    return n
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(
         prog="osaa",
@@ -87,6 +97,21 @@ def _build_parser():
         "--proxy-list",
         dest="proxy_list",
         help="Path to a file containing proxies (ip:port)",
+    )
+    disc_g.add_argument(
+        "--max-results",
+        type=_positive_int,
+        default=10,
+        help="Max search results fetched per query by the search connector "
+        "(default: 10)",
+    )
+    disc_g.add_argument(
+        "--max-pages",
+        type=_positive_int,
+        default=5,
+        help="Max pages crawled per domain by the browser connector, and max "
+        "onion search engines tried per target by the Tor connector "
+        "(default: 5)",
     )
 
     ai = argparse.ArgumentParser(add_help=False)
@@ -180,11 +205,15 @@ def cmd_plan(args) -> int:
         ratio=args.ratio,
         tookie_dir=args.tookie_dir,
         holmes_dir=args.holmes_dir,
+        max_results=args.max_results,
+        max_pages=args.max_pages,
     )
 
     print("[*] Execution plan (no network I/O):")
-    print(f"    output dir: {output_dir}")
-    print(f"    knowledge : {knowledge.to_dict() if knowledge else None}")
+    print(f"    output dir  : {output_dir}")
+    print(f"    knowledge   : {knowledge.to_dict() if knowledge else None}")
+    print(f"    max-results : {args.max_results}  (per search query)")
+    print(f"    max-pages   : {args.max_pages}  (per domain / per Tor target)")
     for entry in orchestrator.plan(targets):
         print(
             f"    [{entry['type']}] {entry['value']} -> "
@@ -217,6 +246,8 @@ async def cmd_run(args) -> int:
         ratio=args.ratio,
         tookie_dir=args.tookie_dir,
         holmes_dir=args.holmes_dir,
+        max_results=args.max_results,
+        max_pages=args.max_pages,
     )
     for key, val in target.items():
         if not val:

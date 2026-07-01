@@ -69,7 +69,9 @@ python3 main.py run --username target_user --name "Jane Doe" \
 Common flags: `--name`, `--email`, `--ratio` (must be within `(0, 1]`),
 `--proxy-list`, `--knowledge-file` / `--knowledge "<text>"`,
 `--tookie-dir` / `--holmes-dir` (or `TOOKIE_DIR` / `HOLMES_DIR` env vars),
-`--debug`.
+`--max-results <n>` (results fetched per search query, default `10`),
+`--max-pages <n>` (pages crawled per domain by the browser, and onion search
+engines tried per target by Tor, default `5`), `--debug`.
 `run`/`doctor`-only: `--ai-agent {lms,ollama,gemini,ollama-http,lms-server}`,
 `--model`, `--ai-endpoint`.
 `run`-only: `--output <dir>` (where to write the report + artifacts) and
