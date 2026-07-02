@@ -92,9 +92,16 @@ doesn't re-issue every request:
 - A target that legitimately returned nothing is cached as a negative result
   for 1 day; after that it's retried.
 - A run that **errored** (connector exception, proxy down, timeout, ...) is
-  never cached — it's always retried on the next run.
+  never cached — it's always retried on the next run. This includes
+  connectors that couldn't even attempt the check (Tor daemon not running,
+  holmes not configured) — those now raise instead of silently returning an
+  empty result, so they aren't mistaken for a verified negative.
 
-Disable entirely with `--no-cache`.
+Cache hits print (`[cache] <tool> on <target>: reusing N cached artifact(s),
+no re-fetch`) without needing `--debug`, and each run ends with a one-line
+summary (`[*] Cache: H/N dispatch(es) served from cache, ...`) so the effect
+is visible without inspecting the sqlite file. Disable entirely with
+`--no-cache`.
 
 ## Testing
 

@@ -102,8 +102,12 @@ class Orchestrator:
         if cache_key is not None:
             cached = self.cache.check_hit(cache_key)
             if cached is not None:
-                logger.info(
-                    f"[cache] {name} on {target}: reusing {len(cached)} cached artifact(s)"
+                # print(), not logger.info(): this is exactly the kind of
+                # thing a user asks "is the cache actually being used?"
+                # about, so it shouldn't be hidden behind --debug.
+                print(
+                    f"[cache] {name} on {target}: reusing {len(cached)} cached "
+                    "artifact(s), no re-fetch"
                 )
                 self.execution_log.append(
                     {
@@ -136,7 +140,15 @@ class Orchestrator:
                     }
                 )
                 if cache_key is not None and isinstance(result, list):
-                    self.cache.record_success(cache_key, result)
+                    # A caching failure (e.g. a malformed/non-serializable
+                    # result) must never turn a real, successful fetch into
+                    # a reported error and discard its data — isolate it.
+                    try:
+                        self.cache.record_success(cache_key, result)
+                    except Exception as cache_err:
+                        logger.error(
+                            f"[x] cache write failed for {name} on {target}: {cache_err}"
+                        )
                 return result
             except Exception as e:
                 self.execution_log.append(
@@ -401,4 +413,26 @@ class Orchestrator:
         self.identity.raw_artifacts.extend(await self._browse_urls(browser, usernames))
         # Force garbage collection as the browser (chrome) is sh*tty and used in unattended ways
         gc.collect()
+        self._print_cache_summary()
         print("[*] Discovery pipeline complete.")
+
+    def _print_cache_summary(self) -> None:
+        """Prints a one-line breakdown of connector dispatches this run —
+        how many were served from cache vs. actually fetched vs. errored —
+        so the discovery cache's effect is visible without inspecting the
+        sqlite file directly."""
+        if self.cache is None:
+            print("[*] Cache: disabled (--no-cache)")
+            return
+        counts = {"cache_hit": 0, "success": 0, "error": 0}
+        for entry in self.execution_log:
+            status = entry.get("status")
+            if status in counts:
+                counts[status] += 1
+        total = sum(counts.values())
+        if total == 0:
+            return
+        print(
+            f"[*] Cache: {counts['cache_hit']}/{total} dispatch(es) served from "
+            f"cache, {counts['success']} fetched live, {counts['error']} errored"
+        )

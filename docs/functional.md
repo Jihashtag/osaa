@@ -47,6 +47,12 @@ python3 [main.py](../main.py) run --username target_handle --name "Jane Doe" --a
 - `--breach-api-key`: Have I Been Pwned API key (falls back to `HIBP_API_KEY`). HIBP has required a paid key for breach lookups since Nov 2021.
 - `--breach-backend {auto,hibp,leakcheck}`: Which breach backend [BreachConnector](../connectors/breach.py) uses. `auto` (default) uses HIBP if a key is configured, otherwise falls back to leakcheck.io's free public endpoint (no key required, but less curated — hits from it carry a lower confidence score than HIBP hits).
 - `--no-cache`: Disable the per-(tool, target) discovery cache (see "Discovery Cache" below).
+- `--max-results`: Max results the [SearchConnector](../connectors/searcher.py) fetches per dork query (default `10`). The unquoted fallback query uses half this value.
+- `--max-pages`: Max pages crawled per domain by the [BrowserConnector](../connectors/browser.py), and max onion search engines tried per target by the [TorConnector](../connectors/tor.py) (default `5`).
+- `--knowledge-file`: Path to a structured JSON file containing certified target details. Validated to exist at parse time.
+- `--knowledge`: Raw text metadata describing context about the target.
+- `--output` (`run`): Directory to write the report and artifacts to (default: `./Report_<target>_resources`).
+- `--force` (`run`): Overwrite an existing report at the destination instead of failing.
 
 ### Discovery Cache
 
@@ -54,13 +60,8 @@ python3 [main.py](../main.py) run --username target_handle --name "Jane Doe" --a
 
 - **Pertinent (non-empty) results** are cached indefinitely and always served from cache for the same (tool, target) pair — no re-fetch, no duplicate artifacts.
 - **Legitimately empty results** are cached as negative for 1 day; a lookup within that window is a hit, after which the target is eligible for a fresh scan.
-- **Errors** (connector exception, proxy down, timeout) are never written to the cache, so a failed attempt is always retried on the next run rather than being mistaken for "already scanned, found nothing".
-- `--max-results`: Max results the [SearchConnector](../connectors/searcher.py) fetches per dork query (default `10`). The unquoted fallback query uses half this value.
-- `--max-pages`: Max pages crawled per domain by the [BrowserConnector](../connectors/browser.py), and max onion search engines tried per target by the [TorConnector](../connectors/tor.py) (default `5`).
-- `--knowledge-file`: Path to a structured JSON file containing certified target details. Validated to exist at parse time.
-- `--knowledge`: Raw text metadata describing context about the target.
-- `--output` (`run`): Directory to write the report and artifacts to (default: `./Report_<target>_resources`).
-- `--force` (`run`): Overwrite an existing report at the destination instead of failing.
+- **Errors** (connector exception, proxy down, timeout) are never written to the cache, so a failed attempt is always retried on the next run rather than being mistaken for "already scanned, found nothing". This includes connectors that couldn't even attempt the check — [TorConnector](../connectors/tor.py) (daemon not running) and [HolmesConnector](../connectors/holmes.py) (not configured) now raise instead of silently returning an empty result, so they're retried rather than cached as a false negative.
+- Cache hits print by default (`[cache] <tool> on <target>: reusing N cached artifact(s), no re-fetch`), and each run ends with `[*] Cache: H/N dispatch(es) served from cache, ...` — visible without `--debug` or inspecting the sqlite file directly.
 
 ---
 

@@ -107,18 +107,19 @@ class TorConnector(BaseConnector):
 
         self.res_dir = get_report_dir()
 
+        # Both of these mean "could not even attempt this", not "attempted
+        # and found nothing" — raise so the caller (Orchestrator) treats it
+        # as an error to retry next time, rather than caching an empty
+        # result for a day just because Tor happened to be down right now.
         if not self._is_tor_running():
-            logger.warn("[!] Tor - Daemon not found, skipping Tor connector.")
-            return []
+            raise RuntimeError("Tor daemon not running")
+
+        driver = self._setup_driver()
+        if not driver:
+            raise RuntimeError("could not initialize Chrome driver")
 
         results = []
-        driver = None
         try:
-            driver = self._setup_driver()
-            if not driver:
-                logger.error("[x] Tor could not init driver")
-                return []
-
             # Step 1: Discovery from onion.live
             engines = await self._search_engine_discovery(driver)
 
@@ -226,8 +227,7 @@ class TorConnector(BaseConnector):
             logger.error(f"[x] Tor - Major error: {e}")
             return results
         finally:
-            if driver:
-                try:
-                    driver.quit()
-                except:
-                    pass
+            try:
+                driver.quit()
+            except:
+                pass

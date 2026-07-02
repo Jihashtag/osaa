@@ -123,8 +123,13 @@ class HolmesConnector(BaseConnector):
             os.chdir(self.holmes_dir)
 
             if not os.path.exists("Configuration/Configuration.ini"):
-                os.chdir(original_dir)
-                return []
+                # Not configured — "could not even attempt this", not
+                # "attempted and found nothing". Raise so the caller treats
+                # it as an error to retry, instead of caching an empty
+                # result for a day.
+                raise RuntimeError(
+                    "holmes not configured (Configuration/Configuration.ini missing)"
+                )
 
             with patch("builtins.input", return_value="2"), patch(
                 "Core.Support.Mail.Mail_Validator.Validator.Mail", return_value=True
@@ -148,13 +153,9 @@ class HolmesConnector(BaseConnector):
                 logger.info(f"[✓] holmes: {target}")
             else:
                 logger.info(f"[!] holmes: {target}: Report not found")
-            os.chdir(original_dir)
             return results
-
-        except Exception as e:
-            logger.error(f"[x] holmes: {target}: {e}")
+        finally:
             os.chdir(original_dir)
-            return []
 
     def _run_holmes_person(self, target):
         if not os.path.exists(self.holmes_dir):
@@ -181,8 +182,11 @@ class HolmesConnector(BaseConnector):
             os.chdir(self.holmes_dir)
 
             if not os.path.exists("Configuration/Configuration.ini"):
-                os.chdir(original_dir)
-                return []
+                # See _run_holmes_emails: raise rather than swallow, so this
+                # is retried next run instead of cached as a negative result.
+                raise RuntimeError(
+                    "holmes not configured (Configuration/Configuration.ini missing)"
+                )
 
             with patch("builtins.input", return_value="1"), patch(
                 "Core.Support.Mail.Mail_Validator.Validator.Mail", return_value=True
@@ -243,23 +247,19 @@ class HolmesConnector(BaseConnector):
                             )
             else:
                 logger.info(f"[!] holmes: {target_slug}: Dorks not found")
-            os.chdir(original_dir)
             return results
-
-        except Exception as e:
-            logger.error(f"[x] holmes: {target}: {e}")
+        finally:
             os.chdir(original_dir)
-            return []
 
     async def run(self, target: str, **kwargs) -> List[DiscoveryResult]:
         loop = asyncio.get_running_loop()
         await self._filter_proxies()
 
-        try:
-            if "@" in target:
-                return await loop.run_in_executor(None, self._run_holmes_emails, target)
-            else:
-                return await loop.run_in_executor(None, self._run_holmes_person, target)
-        except Exception as e:
-            logger.error(f"[x] holmes root: {target}: {e}")
-            return []
+        # Deliberately no try/except here: a genuine failure (unconfigured
+        # tool, unexpected exception) should propagate to the Orchestrator,
+        # which logs it and — importantly — does NOT cache it, so it's
+        # retried next run instead of being treated as "scanned, no hits".
+        if "@" in target:
+            return await loop.run_in_executor(None, self._run_holmes_emails, target)
+        else:
+            return await loop.run_in_executor(None, self._run_holmes_person, target)
